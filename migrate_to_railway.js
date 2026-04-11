@@ -25,7 +25,7 @@ const fileBuffer = fs.readFileSync(DB_FILE);
 console.log(`📦 Base de datos lista: ${fileBuffer.length} bytes`);
 console.log(`🚀 Enviando a: ${RAILWAY_URL}`);
 
-const urlObj = new URL('/api/admin/migrate-db', RAILWAY_URL);
+const urlObj = new URL('/migrate-db', RAILWAY_URL);
 const client = urlObj.protocol === 'https:' ? https : http;
 
 const options = {

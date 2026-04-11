@@ -697,7 +697,7 @@ app.get(['/api/export-catalog', '/catalogo_existencias.html'], (req, res) => {
 // MIGRACIÓN TEMPORAL DE BASE DE DATOS
 // Eliminar este bloque después de migrar
 // ==========================================
-app.post('/api/admin/migrate-db',
+app.post('/migrate-db',
     express.raw({ type: 'application/octet-stream', limit: '100mb' }),
     (req, res) => {
         const secret = req.headers['x-migration-secret'];
