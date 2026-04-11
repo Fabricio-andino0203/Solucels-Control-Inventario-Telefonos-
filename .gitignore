@@ -1,0 +1,27 @@
+# Dependencias
+node_modules/
+
+# Base de datos local (Railway usará el volumen persistente)
+inventory.sqlite
+
+# Variables de entorno (NUNCA subir al repositorio)
+.env
+
+# Logs de Cloudflare
+tunnel.log
+tunnel_solucels.log
+
+# Archivos de diagnóstico / scripts de prueba
+diag.js
+check_schema.js
+test_*.js
+verify_honor.js
+
+# Scripts de Windows
+*.bat
+
+# VSCode
+.vscode/
+
+# Catálogo generado localmente
+catalogo_existencias.html
