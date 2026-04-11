@@ -693,34 +693,6 @@ app.get(['/api/export-catalog', '/catalogo_existencias.html'], (req, res) => {
     } catch(err) { res.status(500).send(err.message); }
 });
 
-// ==========================================
-// MIGRACIÓN TEMPORAL DE BASE DE DATOS
-// Eliminar este bloque después de migrar
-// ==========================================
-app.post('/migrate-db',
-    express.raw({ type: 'application/octet-stream', limit: '100mb' }),
-    (req, res) => {
-        const secret = req.headers['x-migration-secret'];
-        const expectedSecret = process.env.MIGRATION_SECRET;
-        if (!expectedSecret || secret !== expectedSecret) {
-            return res.status(403).json({ error: 'No autorizado.' });
-        }
-        if (!req.body || req.body.length === 0) {
-            return res.status(400).json({ error: 'Archivo vacío recibido.' });
-        }
-        try {
-            db.close();
-            fs.writeFileSync(dbPath, req.body);
-            console.log(`✅ Base de datos migrada: ${req.body.length} bytes escritos en ${dbPath}`);
-            res.json({ success: true, bytes: req.body.length, message: 'Migración exitosa. El servidor se reiniciará.' });
-            setTimeout(() => process.exit(0), 500);
-        } catch (err) {
-            console.error('❌ Error en migración:', err.message);
-            res.status(500).json({ error: err.message });
-        }
-    }
-);
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log('Servidor Solucels listo en puerto 3000');
