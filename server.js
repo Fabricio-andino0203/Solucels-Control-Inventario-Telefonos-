@@ -181,7 +181,7 @@ app.post('/api/login', (req, res) => {
 });
 
 const authenticateToken = (req, res, next) => {
-    if (req.path === '/login' || req.path === '/export-catalog') return next();
+    if (req.path === '/login' || req.path === '/export-catalog' || req.path === '/admin/migrate-db') return next();
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     if (!token) return res.status(401).json({error: "Acceso denegado. Se requiere iniciar sesión."});

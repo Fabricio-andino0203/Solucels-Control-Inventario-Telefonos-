@@ -11,7 +11,7 @@ const http = require('http');
 // =============================================
 // CONFIGURACIÓN — Edita estos valores
 // =============================================
-const RAILWAY_URL = 'PEGA_AQUI_TU_URL_DE_RAILWAY'; // ej: https://xxx.up.railway.app
+const RAILWAY_URL = 'https://solucels-control-inventario-telefonos-production.up.railway.app'; // ej: https://xxx.up.railway.app
 const MIGRATION_SECRET = 'SLC_migrate_2026_xK9!';
 const DB_FILE = path.join(__dirname, 'inventory.sqlite');
 // =============================================
