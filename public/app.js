@@ -328,13 +328,121 @@ function calculateLiquidationDate(dateStr) {
 function renderLiquidationsTable(data) {
     const tbody = document.querySelector('#liquidationsTable tbody');
     const items = data || state.liquidations;
-    if (!items.length) return tbody.innerHTML = '<tr><td colspan="7">No hay liquidaciones pendientes</td></tr>';
+    const filterSelect = document.getElementById('liquidationDateFilter');
+    const cardsContainer = document.getElementById('liquidation-date-cards');
+
+    if (!items.length) {
+        if (cardsContainer) cardsContainer.innerHTML = '';
+        if (filterSelect && !data) {
+            filterSelect.innerHTML = '<option value="ALL">Todas las Fechas de Pago</option>';
+        }
+        document.getElementById('stat-total-liquidations').innerText = '0.00';
+        return tbody.innerHTML = '<tr><td colspan="7">No hay liquidaciones pendientes</td></tr>';
+    }
+
+    // Build groups by payment date
+    const dateGroups = {};
+    const allItems = state.liquidations; // always use full list for groups
+
+    allItems.forEach(s => {
+        const payDate = calculateLiquidationDate(s.sale_date) || 'Sin Fecha';
+        if (!dateGroups[payDate]) dateGroups[payDate] = { items: [], total: 0 };
+        dateGroups[payDate].items.push(s);
+        dateGroups[payDate].total += s.saldo;
+    });
+
+    // Sort dates chronologically
+    const sortedDates = Object.keys(dateGroups).sort((a, b) => {
+        const parsePayDate = (str) => {
+            const match = str.match(/(\d{2})\/(\d{2})/);
+            if (!match) return 99999;
+            return parseInt(match[2]) * 100 + parseInt(match[1]); // month*100 + day
+        };
+        return parsePayDate(a) - parsePayDate(b);
+    });
+
+    // Populate filter dropdown (only when rendering full list)
+    if (!data && filterSelect) {
+        const currentValue = filterSelect.value;
+        filterSelect.innerHTML = '<option value="ALL">📅 Todas las Fechas de Pago</option>';
+        sortedDates.forEach(date => {
+            const count = dateGroups[date].items.length;
+            const total = dateGroups[date].total;
+            filterSelect.innerHTML += `<option value="${date}">📌 ${date} — ${count} equipo${count !== 1 ? 's' : ''} — L. ${total.toLocaleString('en-US', {minimumFractionDigits:2})}</option>`;
+        });
+        filterSelect.value = currentValue || 'ALL';
+    }
+
+    // Render stat cards per date
+    if (cardsContainer) {
+        // Determine which colors to use for cards
+        const cardColors = [
+            { bg: 'rgba(245, 158, 11, 0.1)', border: 'rgba(245, 158, 11, 0.3)', color: '#fbbf24', icon: 'fa-calendar-check' },
+            { bg: 'rgba(59, 130, 246, 0.1)', border: 'rgba(59, 130, 246, 0.3)', color: '#60a5fa', icon: 'fa-calendar-day' },
+            { bg: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.3)', color: '#34d399', icon: 'fa-calendar-week' },
+            { bg: 'rgba(168, 85, 247, 0.1)', border: 'rgba(168, 85, 247, 0.3)', color: '#a78bfa', icon: 'fa-calendar' },
+            { bg: 'rgba(236, 72, 153, 0.1)', border: 'rgba(236, 72, 153, 0.3)', color: '#f472b6', icon: 'fa-calendar-alt' },
+        ];
+
+        cardsContainer.innerHTML = sortedDates.map((date, i) => {
+            const group = dateGroups[date];
+            const c = cardColors[i % cardColors.length];
+            const isActive = filterSelect && filterSelect.value === date;
+            return `<div class="stat-card" style="padding: 0.75rem 1rem; cursor: pointer; min-width: 200px; flex: 1; max-width: 280px; transition: all 0.2s; border: 2px solid ${isActive ? c.color : 'transparent'}; ${isActive ? 'box-shadow: 0 0 15px ' + c.bg + ';' : ''}" onclick="document.getElementById('liquidationDateFilter').value='${date}'; filterLiquidationsView();">
+                <div class="stat-icon" style="width:2.5rem; height:2.5rem; font-size:1rem; background:${c.bg}; color:${c.color}; border-color:${c.border};"><i class="fas ${c.icon}"></i></div>
+                <div class="stat-info">
+                    <h3 style="font-size:0.75rem; white-space:nowrap;">📌 ${date}</h3>
+                    <p style="font-size:1.1rem; color:${c.color}; line-height:1.2;">L. ${group.total.toLocaleString('en-US', {minimumFractionDigits:2})}</p>
+                    <small style="color:var(--text-muted); font-size:0.7rem;">${group.items.length} equipo${group.items.length !== 1 ? 's' : ''}</small>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    // Render table rows (with date group headers if showing ALL)
+    const selectedFilter = filterSelect ? filterSelect.value : 'ALL';
+    let displayItems = items;
     let liquidationsTotal = 0;
-    tbody.innerHTML = items.map(s => {
-        liquidationsTotal += s.saldo;
-        return `<tr><td data-label="Fecha">${formatDate(s.sale_date)}<br><small style="color:var(--danger); font-weight:bold;"><i class="fas fa-calendar-check"></i> Pago: ${calculateLiquidationDate(s.sale_date) || '-'}</small></td><td data-label="Equipo"><strong>${s.model_name}</strong><br><small style="color:var(--text-primary)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br><small>${s.imei}</small></td><td data-label="Tienda">${s.store_name}</td><td data-label="Precio Crédito">L. ${s.final_price.toLocaleString('en-US')}</td><td data-label="Prima">L. ${s.prima.toLocaleString('en-US')}</td><td data-label="Saldo" style="color:#fbbf24; font-weight:bold;">L. ${s.saldo.toLocaleString('en-US')}</td><td data-label="Acción" class="actions-cell text-right"><button class="btn btn-primary" style="background:var(--success)" onclick="markAsPaid(${s.id})"><i class="fas fa-check-double"></i></button></td></tr>`
-    }).join('');
+
+    if (selectedFilter === 'ALL' && !data) {
+        // Group display with section headers
+        let html = '';
+        sortedDates.forEach(date => {
+            const group = dateGroups[date];
+            html += `<tr class="liquidation-date-header"><td colspan="7" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(59, 130, 246, 0.1)); border-left: 4px solid var(--primary); padding: 0.75rem 1rem; font-weight: 700; color: #fff; font-size: 0.95rem;">
+                <i class="fas fa-calendar-check" style="color:var(--primary); margin-right:0.5rem;"></i> Pago: ${date}
+                <span style="float:right; color:#fbbf24; font-weight:800;">Total: L. ${group.total.toLocaleString('en-US', {minimumFractionDigits:2})} <small style="color:var(--text-muted); font-weight:400;">(${group.items.length} equipo${group.items.length !== 1 ? 's' : ''})</small></span>
+            </td></tr>`;
+            group.items.forEach(s => {
+                liquidationsTotal += s.saldo;
+                html += buildLiquidationRow(s);
+            });
+        });
+        tbody.innerHTML = html;
+    } else {
+        // Filtered or search view
+        displayItems.forEach(s => { liquidationsTotal += s.saldo; });
+        tbody.innerHTML = displayItems.map(s => buildLiquidationRow(s)).join('');
+    }
+
     document.getElementById('stat-total-liquidations').innerText = liquidationsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 });
+}
+
+function buildLiquidationRow(s) {
+    return `<tr><td data-label="Fecha">${formatDate(s.sale_date)}<br><small style="color:var(--danger); font-weight:bold;"><i class="fas fa-calendar-check"></i> Pago: ${calculateLiquidationDate(s.sale_date) || '-'}</small></td><td data-label="Equipo"><strong>${s.model_name}</strong><br><small style="color:var(--text-primary)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br><small>${s.imei}</small></td><td data-label="Tienda">${s.store_name}</td><td data-label="Precio Crédito">L. ${s.final_price.toLocaleString('en-US')}</td><td data-label="Prima">L. ${s.prima.toLocaleString('en-US')}</td><td data-label="Saldo" style="color:#fbbf24; font-weight:bold;">L. ${s.saldo.toLocaleString('en-US')}</td><td data-label="Acción" class="actions-cell text-right"><button class="btn btn-primary" style="background:var(--success)" onclick="markAsPaid(${s.id})"><i class="fas fa-check-double"></i></button></td></tr>`;
+}
+
+function filterLiquidationsView() {
+    const filterVal = document.getElementById('liquidationDateFilter').value;
+    if (filterVal === 'ALL') {
+        renderLiquidationsTable();
+    } else {
+        const filtered = state.liquidations.filter(s => {
+            const payDate = calculateLiquidationDate(s.sale_date) || 'Sin Fecha';
+            return payDate === filterVal;
+        });
+        renderLiquidationsTable(filtered);
+    }
 }
 
 // CONFIG / MASTER MODELS

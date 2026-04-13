@@ -352,3 +352,42 @@ option:hover, option:focus, option:active, option:checked {
         height: 52px;
     }
 }
+/* LIQUIDATION GROUPING STYLES */
+.liquidation-date-header td {
+    border-bottom: 2px solid var(--primary);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+
+#liquidation-date-cards .stat-card {
+    min-width: 220px;
+    border-left: 4px solid var(--primary);
+    background: linear-gradient(to right, rgba(37, 99, 235, 0.05), var(--card-bg));
+}
+
+#liquidation-date-cards .stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 20px -5px rgba(0,0,0,0.4);
+    border-color: var(--primary);
+}
+
+@media (max-width: 1024px) {
+    .liquidation-date-header {
+        margin: 1.5rem 0 0.5rem 0;
+        border-radius: 0.75rem;
+        overflow: hidden;
+    }
+    
+    .liquidation-date-header td {
+        display: block;
+        width: 100%;
+        text-align: left;
+    }
+    
+    .liquidation-date-header td span {
+        display: block;
+        float: none !important;
+        margin-top: 0.5rem;
+    }
+}

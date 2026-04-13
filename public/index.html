@@ -176,6 +176,19 @@
                 <button class="btn btn-secondary btn-large" onclick="clearImeiSearch('liquidations')"><i class="fas fa-times"></i> Limpiar</button>
             </div>
 
+            <!-- FILTRO POR FECHA DE PAGO -->
+            <div class="filters-bar" style="margin-top: 1rem; flex-wrap: wrap; gap: 0.75rem; align-items: center;">
+                <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+                    <i class="fas fa-calendar-alt" style="color:var(--primary); font-size:1.1rem;"></i>
+                    <select id="liquidationDateFilter" onchange="filterLiquidationsView()" style="min-width: 240px;">
+                        <option value="ALL">Todas las Fechas de Pago</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- TARJETAS DE SUBTOTAL POR FECHA -->
+            <div id="liquidation-date-cards" class="stats-container" style="margin-top: 1rem; flex-wrap: wrap; gap: 0.75rem;"></div>
+
             <div class="table-container mt-3">
                 <table id="liquidationsTable">
                     <thead><tr><th>Fecha Venta</th><th>Equipo (IMEI)</th><th>Tienda</th><th>Precio Crédito</th><th>Prima / Anticipo</th><th>Saldo a Liquidar</th><th class="text-right">Acción</th></tr></thead>
