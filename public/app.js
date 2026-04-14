@@ -648,6 +648,11 @@ function openSaleModal(id) {
     document.getElementById('salePrima').value = '0.00';
     document.getElementById('saleDiscount').value = '0.00';
 
+    // Set default date to today
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    document.getElementById('saleDate').value = today;
+
     // Admin features
     const isAdmin = currentUser === 'admin';
     document.getElementById('adminDiscountRow').style.display = isAdmin ? 'block' : 'none';
@@ -707,7 +712,8 @@ async function saveSale(e) {
             price_type: document.getElementById('salePriceType').value,
             discount: parseFloat(document.getElementById('saleDiscount').value) || 0,
             prima: parseFloat(document.getElementById('salePrima').value) || 0,
-            notes: document.getElementById('saleNotes').value
+            notes: document.getElementById('saleNotes').value,
+            sale_date: document.getElementById('saleDate').value
         };
         const res = await fetchAuth(`${API_URL}/sales`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         if (!res.ok) {

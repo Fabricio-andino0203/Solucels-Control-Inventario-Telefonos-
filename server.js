@@ -474,7 +474,7 @@ app.get('/api/transfers', (req, res) => {
 // ==========================================
 app.post('/api/sales', (req, res) => {
     console.log("POST /api/sales - BODY:", req.body);
-    const { phone_id, store_id, sale_type, prima, notes, discount, price_type } = req.body;
+    const { phone_id, store_id, sale_type, prima, notes, discount, price_type, sale_date } = req.body;
     try {
         const phone = db.prepare(`SELECT p.id, p.status, p.store_id, m.price_cash, m.credit_enabled, m.price_credit, m.price_wholesale, m.max_discount, m.offer_price, m.price_cost 
                                   FROM phones p JOIN phone_models m ON p.model_id = m.id WHERE p.id=?`).get(phone_id);
@@ -526,11 +526,18 @@ app.post('/api/sales', (req, res) => {
         }
 
         db.transaction(() => {
-            const now = getLocalTime();
+            let finalDate = sale_date;
+            if (!finalDate) {
+                finalDate = getLocalTime();
+            } else if (finalDate.length === 10) { 
+                // If only YYYY-MM-DD is provided, append a default time
+                finalDate += " 12:00:00";
+            }
+
             db.prepare("UPDATE phones SET status='Vendido' WHERE id=?").run(phone_id);
             const stmt = db.prepare(`INSERT INTO sales (phone_id, store_id, sale_type, final_price, prima, saldo, payment_status, client_name, installments, notes, discount, final_price_type, sale_date, cost_price) 
                                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-            stmt.run(phone_id, store_id, sale_type, final_price, actPrima, saldo, payment_status, defaultClient, null, notes || '', actDiscount, actPriceType, now, phone.price_cost || 0);
+            stmt.run(phone_id, store_id, sale_type, final_price, actPrima, saldo, payment_status, defaultClient, null, notes || '', actDiscount, actPriceType, finalDate, phone.price_cost || 0);
         })();
         res.json({ success: true, final_price });
     } catch(err) { res.status(400).json({error: err.message}); }

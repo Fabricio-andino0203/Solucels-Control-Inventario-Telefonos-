@@ -132,6 +132,16 @@ input, select {
     background-position: right 1rem center;
     background-size: 1.2em;
 }
+input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    cursor: pointer;
+}
+.input-date-premium {
+    border: 2px solid var(--border-color) !important;
+}
+.input-date-premium:focus {
+    border-color: var(--primary) !important;
+}
 
 /* UNIFIED DARK THEME FOR DROPDOWNS */
 select option {
