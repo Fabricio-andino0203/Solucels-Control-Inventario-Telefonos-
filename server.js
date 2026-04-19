@@ -460,12 +460,33 @@ app.post('/api/transfers', (req, res) => {
 });
 app.get('/api/transfers', (req, res) => {
     try {
-        res.json(db.prepare(`
-            SELECT t.*, p.imei, m.name as model_name, m.ram, m.storage, s1.name as from_store, s2.name as to_store 
-            FROM transfers t JOIN phones p ON t.phone_id = p.id JOIN phone_models m ON p.model_id = m.id
-            JOIN stores s1 ON t.from_store_id = s1.id JOIN stores s2 ON t.to_store_id = s2.id
-            ORDER BY t.transfer_date DESC LIMIT 100
-        `).all());
+        const { store, date_from, date_to } = req.query;
+        let sql = `
+            SELECT t.*, p.imei, m.name as model_name, m.ram, m.storage, m.image_url,
+                   s1.name as from_store, s2.name as to_store, s2.id as to_store_id
+            FROM transfers t 
+            JOIN phones p ON t.phone_id = p.id 
+            JOIN phone_models m ON p.model_id = m.id
+            JOIN stores s1 ON t.from_store_id = s1.id 
+            JOIN stores s2 ON t.to_store_id = s2.id
+            WHERE 1=1
+        `;
+        const params = [];
+        if (store && store !== 'ALL') {
+            sql += ` AND t.to_store_id = ?`;
+            params.push(store);
+        }
+        if (date_from) {
+            sql += ` AND DATE(t.transfer_date) >= DATE(?)`;
+            params.push(date_from);
+        }
+        if (date_to) {
+            sql += ` AND DATE(t.transfer_date) <= DATE(?)`;
+            params.push(date_to);
+        }
+        sql += ` ORDER BY t.transfer_date DESC`;
+        if (!store && !date_from && !date_to) sql += ` LIMIT 200`;
+        res.json(db.prepare(sql).all(...params));
     } catch (err) { res.status(500).json({error: err.message}); }
 });
 

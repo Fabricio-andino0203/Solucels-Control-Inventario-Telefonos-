@@ -199,7 +199,15 @@
 
         <!-- 4. TRANSFERS -->
         <div id="transfers-tab" class="tab-content">
-            <header><div><h1>Historial de Traslados</h1></div></header>
+            <header>
+                <div>
+                    <h1>Historial de Traslados</h1>
+                    <p class="subtitle">Control de movimiento de equipos entre sucursales</p>
+                </div>
+                <button class="btn btn-primary" onclick="generateTransfersPDF()" style="background:var(--success); color:#fff; border:none; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);">
+                    <i class="fas fa-file-pdf"></i> Generar Reporte PDF
+                </button>
+            </header>
 
             <!-- IMEI SEARCH BAR FOR TRANSFERS -->
             <div class="search-box-premium">
@@ -216,9 +224,25 @@
                 <div id="transfersResultsList" class="results-grid"></div>
             </div>
 
-            <div class="table-container">
+            <!-- FILTROS DE TRASLADOS -->
+            <div class="filters-bar" style="margin-top: 1rem; flex-wrap: wrap; gap: 0.75rem; align-items: center;">
+                <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; flex:1;">
+                    <i class="fas fa-store" style="color:var(--primary); font-size:1.1rem;"></i>
+                    <select id="transferFilterStore" onchange="applyTransferFilters()" style="min-width: 200px;">
+                        <option value="ALL">Todas las tiendas</option>
+                    </select>
+                    <i class="fas fa-calendar-alt" style="color:var(--primary); font-size:1.1rem; margin-left:0.5rem;"></i>
+                    <input type="date" id="transferFilterDateFrom" onchange="applyTransferFilters()" style="padding:0.6rem 1rem; background:var(--secondary); border:1px solid var(--border-color); border-radius:0.5rem; color:#fff; font-family:inherit;" placeholder="Desde">
+                    <span style="color:var(--text-muted);">—</span>
+                    <input type="date" id="transferFilterDateTo" onchange="applyTransferFilters()" style="padding:0.6rem 1rem; background:var(--secondary); border:1px solid var(--border-color); border-radius:0.5rem; color:#fff; font-family:inherit;" placeholder="Hasta">
+                    <button class="btn btn-secondary" onclick="clearTransferFilters()" style="padding:0.6rem 1rem; min-height:40px;"><i class="fas fa-times"></i> Limpiar Filtros</button>
+                </div>
+                <div id="transfer-stats-badge" style="color:var(--text-muted); font-size:0.9rem; white-space:nowrap;"></div>
+            </div>
+
+            <div class="table-container mt-3">
                 <table id="transfersTable">
-                    <thead><tr><th>Fecha</th><th>Equipo</th><th>IMEI / S/N</th><th>Origen</th><th>Destino</th></tr></thead>
+                    <thead><tr><th>Fecha</th><th>Equipo</th><th>IMEI / S/N</th><th>Tienda Origen</th><th>Tienda Destino (Recibe)</th></tr></thead>
                     <tbody></tbody>
                 </table>
             </div>

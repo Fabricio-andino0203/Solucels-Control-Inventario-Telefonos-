@@ -88,7 +88,7 @@ function switchTab(tabId) {
     }
 
     if (window.innerWidth <= 820) toggleSidebar();
-    if (tabId === 'transfers-tab') { fetchTransfers(); document.getElementById('transfersImeiSearch').focus(); }
+    if (tabId === 'transfers-tab') { applyTransferFilters(); document.getElementById('transfersImeiSearch').focus(); }
     else if (tabId === 'sales-tab') { fetchSales(); document.getElementById('salesImeiSearch').focus(); }
     else if (tabId === 'liquidations-tab') { fetchLiquidations(); document.getElementById('liquidationsImeiSearch').focus(); }
     else if (tabId === 'bulk-tab') { document.getElementById('bulkImeiList').focus(); }
@@ -143,7 +143,18 @@ async function fetchInventory() {
         renderPhonesTable(state.phones);
     } catch (e) { console.error('Fetch Inventory Error:', e); }
 }
-async function fetchTransfers() { try { const res = await fetchAuth(`${API_URL}/transfers`); state.transfers = await res.json(); renderTransfersTable(); } catch (e) { console.error(e); } }
+async function fetchTransfers(filters = {}) {
+    try {
+        const params = new URLSearchParams();
+        if (filters.store && filters.store !== 'ALL') params.append('store', filters.store);
+        if (filters.date_from) params.append('date_from', filters.date_from);
+        if (filters.date_to) params.append('date_to', filters.date_to);
+        const url = `${API_URL}/transfers${params.toString() ? '?' + params.toString() : ''}`;
+        const res = await fetchAuth(url);
+        state.transfers = await res.json();
+        renderTransfersTable();
+    } catch (e) { console.error(e); }
+}
 async function fetchSales() { try { const res = await fetchAuth(`${API_URL}/sales`); state.sales = await res.json(); renderSalesTable(); } catch (e) { console.error(e); } }
 async function fetchLiquidations() { try { const res = await fetchAuth(`${API_URL}/liquidations`); state.liquidations = await res.json(); renderLiquidationsTable(); } catch (e) { console.error(e); } }
 async function fetchUsers() { try { const res = await fetchAuth(`${API_URL}/users`); state.users = await res.json(); renderUsers(); } catch (e) { console.error(e); } }
@@ -192,6 +203,14 @@ function populateSelects() {
     document.getElementById('filterStore').innerHTML = '<option value="ALL">Todas las tiendas</option>' + state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
     document.getElementById('filterBrand').innerHTML = '<option value="ALL">Todas las marcas</option>' + state.brands.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
     document.getElementById('newModelBrand').innerHTML = '<option value="">Marca...</option>' + state.brands.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+
+    // Populate transfer store filter
+    const tfStoreFilter = document.getElementById('transferFilterStore');
+    if (tfStoreFilter) {
+        const tfCurrent = tfStoreFilter.value;
+        tfStoreFilter.innerHTML = '<option value="ALL">Todas las tiendas destino</option>' + state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        if (tfCurrent) tfStoreFilter.value = tfCurrent;
+    }
 
     // Restore selections
     if (s_filterStore) document.getElementById('filterStore').value = s_filterStore;
@@ -277,8 +296,187 @@ function renderPhonesTable(phonesData) {
 
 function renderTransfersTable() {
     const tbody = document.querySelector('#transfersTable tbody');
-    if (!state.transfers.length) return tbody.innerHTML = '<tr><td colspan="5">No hay traslados</td></tr>';
-    tbody.innerHTML = state.transfers.map(t => `<tr><td data-label="Fecha">${formatDate(t.transfer_date)}</td><td data-label="Equipo"><strong>${t.model_name}</strong><br><small style="color:var(--text-primary)">${t.ram || 'N/A'} / ${t.storage || 'N/A'}</small></td><td data-label="IMEI / S/N">${t.imei}</td><td data-label="Origen"><span class="badge badge-warning">${t.from_store}</span></td><td data-label="Destino"><span class="badge badge-success">${t.to_store}</span></td></tr>`).join('');
+    
+    // Populate store filter dropdown
+    const storeFilter = document.getElementById('transferFilterStore');
+    if (storeFilter && state.stores.length) {
+        const currentVal = storeFilter.value;
+        storeFilter.innerHTML = '<option value="ALL">Todas las tiendas destino</option>' + 
+            state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        storeFilter.value = currentVal || 'ALL';
+    }
+
+    // Stats badge
+    const badge = document.getElementById('transfer-stats-badge');
+    if (badge) {
+        badge.textContent = state.transfers.length > 0
+            ? `${state.transfers.length} traslado${state.transfers.length !== 1 ? 's' : ''} encontrado${state.transfers.length !== 1 ? 's' : ''}`
+            : '';
+    }
+
+    if (!state.transfers.length) return tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No hay traslados para los filtros seleccionados</td></tr>';
+    tbody.innerHTML = state.transfers.map(t => `
+        <tr>
+            <td data-label="Fecha">${formatDate(t.transfer_date)}</td>
+            <td data-label="Equipo"><strong>${t.model_name}</strong><br><small style="color:var(--text-primary)">${t.ram || 'N/A'} / ${t.storage || 'N/A'}</small></td>
+            <td data-label="IMEI / S/N"><span style="font-family:monospace">${t.imei}</span></td>
+            <td data-label="Tienda Origen"><span class="badge badge-warning">${t.from_store}</span></td>
+            <td data-label="Tienda Destino (Recibe)"><span class="badge badge-success">${t.to_store}</span></td>
+        </tr>`).join('');
+}
+
+function applyTransferFilters() {
+    const store = document.getElementById('transferFilterStore')?.value || 'ALL';
+    const date_from = document.getElementById('transferFilterDateFrom')?.value || '';
+    const date_to = document.getElementById('transferFilterDateTo')?.value || '';
+    fetchTransfers({ store, date_from, date_to });
+}
+
+function clearTransferFilters() {
+    const storeFilter = document.getElementById('transferFilterStore');
+    const dateFrom = document.getElementById('transferFilterDateFrom');
+    const dateTo = document.getElementById('transferFilterDateTo');
+    if (storeFilter) storeFilter.value = 'ALL';
+    if (dateFrom) dateFrom.value = '';
+    if (dateTo) dateTo.value = '';
+    fetchTransfers();
+}
+
+function generateTransfersPDF() {
+    if (!state.transfers.length) {
+        showToast('No hay traslados para generar el reporte. Aplique filtros primero.', true);
+        return;
+    }
+
+    const storeFilter = document.getElementById('transferFilterStore');
+    const dateFrom = document.getElementById('transferFilterDateFrom')?.value || '';
+    const dateTo = document.getElementById('transferFilterDateTo')?.value || '';
+    const storeText = storeFilter?.options[storeFilter.selectedIndex]?.text || 'Todas las tiendas';
+
+    let periodText = 'Todos los períodos';
+    if (dateFrom && dateTo) periodText = `${dateFrom} al ${dateTo}`;
+    else if (dateFrom) periodText = `Desde ${dateFrom}`;
+    else if (dateTo) periodText = `Hasta ${dateTo}`;
+
+    // Agrupar por tienda destino
+    const byStore = {};
+    state.transfers.forEach(t => {
+        const key = t.to_store;
+        if (!byStore[key]) byStore[key] = [];
+        byStore[key].push(t);
+    });
+
+    const logoHtml = `<img src="${window.location.protocol}//${window.location.host}/assets/images/branding/logo_solucels.png" style="max-height: 70px; margin-bottom: 5px;" alt="Solucels Logo" onerror="this.style.display='none'">`;
+    const genDate = new Date().toLocaleString('es-HN');
+
+    const storeRows = Object.entries(byStore).map(([store, items]) => `
+        <div class="store-section">
+            <div class="store-header">
+                <i class="icon">📦</i>
+                <div>
+                    <h2 class="store-title">${store}</h2>
+                    <span class="store-count">${items.length} equipo${items.length !== 1 ? 's' : ''} recibido${items.length !== 1 ? 's' : ''}</span>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr><th>#</th><th>Fecha Traslado</th><th>Modelo / Equipo</th><th>Especificaciones</th><th>IMEI / S/N</th><th>Tienda Origen</th></tr>
+                </thead>
+                <tbody>
+                    ${items.map((t, i) => `
+                    <tr>
+                        <td class="text-center" style="color:#94a3b8; font-weight:600;">${i + 1}</td>
+                        <td>${formatDate(t.transfer_date)}</td>
+                        <td><strong>${t.model_name}</strong></td>
+                        <td style="color:#64748b;">${t.ram || 'N/A'} / ${t.storage || 'N/A'}</td>
+                        <td style="font-family:monospace; font-size:13px;">${t.imei}</td>
+                        <td>${t.from_store}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>
+    `).join('');
+
+    const htmlContent = `<!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <title>Traslados - ${storeText}</title>
+        <style>
+            @page { size: 80mm auto; margin: 4mm 3mm; }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body {
+                font-family: 'Courier New', Courier, monospace;
+                font-size: 11px;
+                color: #000;
+                background: #fff;
+                width: 74mm;
+                margin: 0 auto;
+                padding: 2mm 0;
+            }
+            .receipt-header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 8px; }
+            .receipt-header img { max-width: 50mm; max-height: 20mm; margin: 0 auto 4px; display: block; }
+            .receipt-header h1 { font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
+            .receipt-header p { font-size: 9px; color: #333; }
+            .meta-info { font-size: 10px; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 8px; line-height: 1.6; }
+            .meta-info span { font-weight: bold; }
+            .total-box { text-align: center; font-size: 12px; font-weight: bold; padding: 5px 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; margin-bottom: 10px; }
+            .store-section { margin-bottom: 6px; }
+            .store-header { text-align: center; font-weight: bold; font-size: 12px; padding: 4px 0; text-transform: uppercase; line-height: 1.5; }
+            .store-header .sub { font-size: 10px; font-weight: normal; }
+            .item-row { padding: 4px 0; line-height: 1.6; }
+            .item-num { font-weight: bold; font-size: 10px; color: #555; }
+            .item-model { font-weight: bold; font-size: 11px; text-transform: uppercase; word-break: break-word; }
+            .item-spec { font-size: 10px; color: #333; }
+            .item-imei { font-size: 10px; font-family: 'Courier New', monospace; word-break: break-all; }
+            .item-meta { font-size: 9px; color: #555; }
+            .divider { font-size: 9px; color: #aaa; text-align: center; margin: 2px 0; white-space: nowrap; overflow: hidden; }
+            .store-total { font-weight: bold; font-size: 11px; text-align: right; padding: 3px 0 5px; }
+            .section-break { text-align: center; font-size: 10px; color: #666; margin: 6px 0; white-space: nowrap; overflow: hidden; }
+            .receipt-footer { text-align: center; font-size: 9px; color: #555; border-top: 1px dashed #000; padding-top: 6px; margin-top: 8px; line-height: 1.6; }
+            @media print {
+                body { width: 74mm; }
+                @page { size: 80mm auto; margin: 4mm 3mm; }
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="receipt-header">
+            <img src="${window.location.protocol}//${window.location.host}/assets/images/branding/logo_solucels.png" alt="Solucels" onerror="this.style.display='none'">
+            <h1>Solucels Control</h1>
+            <p>Reporte de Traslados</p>
+            <p>${genDate}</p>
+        </div>
+        <div class="meta-info">
+            <span>Tienda:</span> ${storeText}<br>
+            <span>Periodo:</span> ${periodText}<br>
+            <span>Generado:</span> Sistema Solucels
+        </div>
+        <div class="total-box">
+            TOTAL: ${state.transfers.length} EQUIPO${state.transfers.length !== 1 ? 'S' : ''}
+        </div>
+        ${storeRows}
+        <div class="receipt-footer">
+            Solucels Control<br>
+            Sistema de Inventario de Telefonos<br>
+            *** Documento Interno ***
+        </div>
+    </body>
+    </html>`;
+
+    let printFrame = document.getElementById('printFrame');
+    if (!printFrame) {
+        printFrame = document.createElement('iframe');
+        printFrame.id = 'printFrame';
+        printFrame.style.cssText = 'position:absolute;width:0;height:0;border:none;';
+        document.body.appendChild(printFrame);
+    }
+    showToast('Generando Reporte de Traslados...');
+    const doc = printFrame.contentWindow.document;
+    doc.open(); doc.write(htmlContent); doc.close();
+    setTimeout(() => { printFrame.contentWindow.focus(); printFrame.contentWindow.print(); }, 600);
 }
 function renderSalesTable() {
     const filterType = document.getElementById('salesTypeFilter') ? document.getElementById('salesTypeFilter').value : 'ALL';
