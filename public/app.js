@@ -370,18 +370,16 @@ function generateTransfersPDF() {
     const genDate = new Date().toLocaleDateString('es-HN', { day:'2-digit', month:'2-digit', year:'numeric' });
     const genTime = new Date().toLocaleTimeString('es-HN', { hour:'2-digit', minute:'2-digit', hour12:true });
 
-    // Secciones por tienda — tabla compacta para recibo 80mm
+    // Secciones por tienda — estilo factura termica profesional
     const storeRows = Object.entries(byStore).map(([store, items]) => `
         <div class="store-section">
-            <div class="sep-dashed"></div>
-            <div class="store-name">&#9654; ${store.toUpperCase()} &#9664;</div>
+            <div class="store-bar">${store.toUpperCase()}</div>
             <div class="store-sub">${items.length} equipo${items.length !== 1 ? 's' : ''} recibido${items.length !== 1 ? 's' : ''}</div>
-            <div class="sep-dashed"></div>
             <table class="items-table">
                 <thead>
                     <tr>
                         <th class="c-num">#</th>
-                        <th class="c-model">Marca / Modelo</th>
+                        <th class="c-model">Marca / Modelo / Especificaciones</th>
                         <th class="c-imei">IMEI / S-N</th>
                         <th class="c-orig">Origen</th>
                     </tr>
@@ -389,9 +387,9 @@ function generateTransfersPDF() {
                 <tbody>
                     ${items.map((t, i) => `
                     <tr>
-                        <td class="c-num tc">${String(i+1).padStart(2,'0')}</td>
+                        <td class="c-num td-c">${String(i+1).padStart(2,'0')}</td>
                         <td class="c-model">
-                            <span class="brand">${(t.brand_name || '').toUpperCase()}</span><br>
+                            <strong>${(t.brand_name || '').toUpperCase()}</strong><br>
                             ${t.model_name}<br>
                             <span class="spec">${t.ram || '--'} / ${t.storage || '--'}</span>
                         </td>
@@ -400,7 +398,9 @@ function generateTransfersPDF() {
                     </tr>`).join('')}
                 </tbody>
             </table>
-            <div class="store-footer">SUBTOTAL: ${items.length} EQUIPO${items.length !== 1 ? 'S' : ''}</div>
+            <div class="store-footer">
+                <span>No. Equipos:</span> <strong>${items.length}</strong>
+            </div>
         </div>
     `).join('');
 
@@ -412,6 +412,7 @@ function generateTransfersPDF() {
     <style>
         @page { size: 80mm auto; margin: 5mm 4mm; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
             font-family: Arial, Helvetica, sans-serif;
             font-size: 9pt;
@@ -419,113 +420,127 @@ function generateTransfersPDF() {
             background: #fff;
             width: 72mm;
             margin: 0 auto;
-            text-align: center;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
 
-        /* LOGO */
-        .logo-wrap {
-            text-align: center;
-            margin-bottom: 4px;
-        }
+        /* ═══ LOGO ═══ */
+        .logo-wrap { text-align: center; margin-bottom: 3px; }
         .logo-wrap img {
             display: block;
             margin: 0 auto;
-            max-width: 42mm;
-            max-height: 16mm;
+            max-width: 44mm;
+            max-height: 18mm;
             filter: invert(1) brightness(0);
             -webkit-filter: invert(1) brightness(0);
         }
 
-        /* CABECERA */
-        .rh { padding-bottom: 6px; margin-bottom: 5px; border-bottom: 2px solid #000; text-align: center; }
-        .rh .company  { font-size: 14pt; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2px; }
-        .rh .subtitle { font-size: 9pt; font-weight: 700; letter-spacing: 0.5px; margin-top: 1px; }
-        .rh .gen-date { font-size: 8pt; margin-top: 3px; }
-
-        /* SEPARADORES */
-        .sep-solid  { border-top: 2px solid #000; margin: 5px 0; }
-        .sep-dashed { border-top: 1px dashed #000; margin: 4px 0; }
-        .sep-dots   { font-size: 8pt; color: #444; margin: 2px 0; text-align: center; letter-spacing: 2px; }
-
-        /* META */
-        .meta-block { font-size: 8.5pt; line-height: 1.75; text-align: center; margin-bottom: 4px; }
-        .meta-block b { font-weight: 800; }
-
-        /* TOTAL GENERAL */
-        .grand-total {
-            font-size: 12pt;
-            font-weight: 900;
+        /* ═══ ENCABEZADO ═══ */
+        .rh {
             text-align: center;
-            padding: 5px 0;
-            border-top: 2px solid #000;
+            padding-bottom: 6px;
+            margin-bottom: 4px;
             border-bottom: 2px solid #000;
-            margin: 5px 0 8px;
-            letter-spacing: 1px;
         }
+        .company  { font-size: 13pt; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; }
+        .subtitle { font-size: 9pt; font-weight: 700; margin-top: 2px; }
+        .gen-date { font-size: 8.5pt; margin-top: 3px; }
 
-        /* TIENDA */
-        .store-section { margin-bottom: 5px; text-align: center; }
-        .store-name {
+        /* ═══ SEPARADORES ═══ */
+        .sep-solid  { border-top: 2px solid #000; margin: 5px 0; }
+        .sep-light  { border-top: 1px solid #000; margin: 4px 0; }
+        .sep-dashed { border-top: 1px dashed #000; margin: 4px 0; }
+
+        /* ═══ INFO META ═══ */
+        .info-row {
+            display: table;
+            width: 100%;
+            font-size: 8.5pt;
+            padding: 2px 0;
+            line-height: 1.6;
+        }
+        .info-label { display: table-cell; font-weight: 700; width: 30mm; }
+        .info-value { display: table-cell; text-align: right; }
+
+        /* ═══ BARRA TOTAL GENERAL ═══ */
+        .grand-total-bar {
+            background: #000;
+            color: #fff;
             font-size: 11pt;
             font-weight: 900;
             text-align: center;
+            padding: 5px 0;
+            margin: 6px 0;
+            letter-spacing: 1px;
+        }
+
+        /* ═══ TIENDA ═══ */
+        .store-section { margin-bottom: 8px; }
+        .store-bar {
+            background: #000;
+            color: #fff;
+            font-size: 10pt;
+            font-weight: 900;
+            text-align: center;
+            padding: 4px 2px;
             letter-spacing: 0.5px;
-            padding: 3px 0 1px;
+            margin-bottom: 2px;
         }
         .store-sub {
             font-size: 8pt;
-            font-style: italic;
             text-align: center;
-            margin-bottom: 2px;
+            font-style: italic;
+            margin-bottom: 3px;
         }
 
-        /* TABLA COMPACTA DE EQUIPOS */
+        /* ═══ TABLA DE EQUIPOS ═══ */
         .items-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 7pt;
-            margin: 3px 0;
+            font-size: 8pt;
+            margin: 2px 0;
             text-align: left;
         }
-        .items-table thead tr {
-            border-bottom: 1px solid #000;
-        }
         .items-table th {
-            font-size: 6.5pt;
+            font-size: 7.5pt;
             font-weight: 900;
             text-transform: uppercase;
-            padding: 2px 1px;
+            padding: 3px 2px;
+            border-top: 1.5px solid #000;
             border-bottom: 1.5px solid #000;
-            letter-spacing: 0.3px;
+            letter-spacing: 0.2px;
+            background: #f0f0f0;
         }
         .items-table td {
-            padding: 2px 1px;
+            padding: 3px 2px;
             vertical-align: top;
-            border-bottom: 1px dashed #bbb;
-            font-size: 7pt;
-            line-height: 1.4;
+            border-bottom: 1px solid #ccc;
+            font-size: 8pt;
+            line-height: 1.5;
         }
-        .items-table tr:last-child td { border-bottom: none; }
-        .c-num  { width: 6mm;  text-align: center; }
-        .c-model{ width: 24mm; }
-        .c-imei { width: 28mm; font-family: 'Courier New', monospace; font-size: 6.5pt; word-break: break-all; }
-        .c-orig { width: 14mm; font-size: 6.5pt; }
-        .tc     { text-align: center; font-weight: 700; }
-        .brand  { font-weight: 800; font-size: 7pt; }
-        .spec   { font-size: 6pt; color: #333; }
+        .items-table tr:last-child td { border-bottom: 1.5px solid #000; }
 
-        /* PIE TIENDA */
-        .store-footer { font-size: 9pt; font-weight: 800; text-align: right; padding: 3px 0 4px; border-top: 1.5px solid #000; margin-top: 2px; }
+        .c-num  { width: 7mm;  text-align: center; }
+        .c-model{ width: 23mm; }
+        .c-imei { width: 26mm; font-family: 'Courier New', Courier, monospace; font-size: 8pt; font-weight: 700; word-break: break-all; letter-spacing: 0px; }
+        .c-orig { width: 16mm; font-size: 7.5pt; }
+        .td-c   { text-align: center; font-weight: 700; font-size: 9pt; }
+        .spec   { font-size: 7.5pt; color: #222; }
 
-        /* PIE GENERAL */
+        /* ═══ PIE DE TIENDA ═══ */
+        .store-footer {
+            font-size: 8.5pt;
+            text-align: right;
+            padding: 3px 0;
+        }
+
+        /* ═══ PIE GENERAL ═══ */
         .receipt-footer {
             font-size: 8pt;
             text-align: center;
             line-height: 1.8;
             padding-top: 5px;
-            margin-top: 5px;
+            margin-top: 4px;
         }
 
         @media print {
@@ -535,6 +550,8 @@ function generateTransfersPDF() {
     </style>
 </head>
 <body>
+
+    <!-- ENCABEZADO -->
     <div class="rh">
         <div class="logo-wrap">
             <img src="${logoUrl}" alt="Solucels" onerror="this.style.display='none'">
@@ -544,23 +561,24 @@ function generateTransfersPDF() {
         <div class="gen-date">${genDate} &nbsp;|&nbsp; ${genTime}</div>
     </div>
 
-    <div class="meta-block">
-        <b>TIENDA:</b> ${storeText.toUpperCase()}<br>
-        <b>PERIODO:</b> ${periodText}
-    </div>
+    <!-- META -->
+    <div class="info-row"><span class="info-label">Tienda:</span><span class="info-value">${storeText.toUpperCase()}</span></div>
+    <div class="info-row"><span class="info-label">Periodo:</span><span class="info-value">${periodText}</span></div>
 
-    <div class="grand-total">
-        TOTAL: ${state.transfers.length} EQUIPO${state.transfers.length !== 1 ? 'S' : ''}
-    </div>
+    <!-- TOTAL -->
+    <div class="grand-total-bar">TOTAL: ${state.transfers.length} EQUIPO${state.transfers.length !== 1 ? 'S' : ''}</div>
 
+    <!-- SECCIONES POR TIENDA -->
     ${storeRows}
 
+    <!-- PIE -->
     <div class="sep-solid"></div>
     <div class="receipt-footer">
-        SOLUCELS CONTROL<br>
+        <strong>SOLUCELS CONTROL</strong><br>
         Sistema de Inventario de Telefonos<br>
         *** DOCUMENTO INTERNO ***
     </div>
+
 </body>
 </html>`;
 
