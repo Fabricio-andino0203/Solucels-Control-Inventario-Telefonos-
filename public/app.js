@@ -370,24 +370,36 @@ function generateTransfersPDF() {
     const genDate = new Date().toLocaleDateString('es-HN', { day:'2-digit', month:'2-digit', year:'numeric' });
     const genTime = new Date().toLocaleTimeString('es-HN', { hour:'2-digit', minute:'2-digit', hour12:true });
 
-    // Secciones por tienda — formato recibo termico 80mm
+    // Secciones por tienda — tabla compacta para recibo 80mm
     const storeRows = Object.entries(byStore).map(([store, items]) => `
         <div class="store-section">
             <div class="sep-dashed"></div>
             <div class="store-name">&#9654; ${store.toUpperCase()} &#9664;</div>
             <div class="store-sub">${items.length} equipo${items.length !== 1 ? 's' : ''} recibido${items.length !== 1 ? 's' : ''}</div>
             <div class="sep-dashed"></div>
-            ${items.map((t, i) => `
-            <div class="item-block">
-                <div class="item-counter">[${String(i+1).padStart(2,'0')} / ${String(items.length).padStart(2,'0')}]</div>
-                <div class="item-model">${t.model_name.toUpperCase()}</div>
-                <div class="item-spec">${t.ram || '--'} / ${t.storage || '--'}</div>
-                <div class="item-imei">${t.imei}</div>
-                <div class="item-label">ENVIADO DE: ${t.from_store.toUpperCase()}</div>
-                <div class="item-label">${formatDate(t.transfer_date)}</div>
-            </div>
-            <div class="sep-dots">. . . . . . . . . . . . . . . . . .</div>
-            `).join('')}
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th class="c-num">#</th>
+                        <th class="c-model">Marca / Modelo</th>
+                        <th class="c-imei">IMEI / S-N</th>
+                        <th class="c-orig">Origen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${items.map((t, i) => `
+                    <tr>
+                        <td class="c-num tc">${String(i+1).padStart(2,'0')}</td>
+                        <td class="c-model">
+                            <span class="brand">${(t.brand_name || '').toUpperCase()}</span><br>
+                            ${t.model_name}<br>
+                            <span class="spec">${t.ram || '--'} / ${t.storage || '--'}</span>
+                        </td>
+                        <td class="c-imei">${t.imei}</td>
+                        <td class="c-orig">${t.from_store}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
             <div class="store-footer">SUBTOTAL: ${items.length} EQUIPO${items.length !== 1 ? 'S' : ''}</div>
         </div>
     `).join('');
@@ -466,23 +478,46 @@ function generateTransfersPDF() {
             font-size: 8pt;
             font-style: italic;
             text-align: center;
-            margin-bottom: 1px;
+            margin-bottom: 2px;
         }
 
-        /* ITEM */
-        .item-block {
-            text-align: center;
-            padding: 4px 0 2px;
-            line-height: 1.7;
+        /* TABLA COMPACTA DE EQUIPOS */
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 7pt;
+            margin: 3px 0;
+            text-align: left;
         }
-        .item-counter { font-size: 7.5pt; font-weight: 700; color: #444; }
-        .item-model   { font-size: 10.5pt; font-weight: 900; letter-spacing: 0.3px; text-transform: uppercase; word-break: break-word; }
-        .item-spec    { font-size: 8.5pt; font-weight: 600; }
-        .item-imei    { font-size: 8.5pt; font-weight: 700; font-family: 'Courier New', monospace; word-break: break-all; letter-spacing: 0.5px; }
-        .item-label   { font-size: 8pt; }
+        .items-table thead tr {
+            border-bottom: 1px solid #000;
+        }
+        .items-table th {
+            font-size: 6.5pt;
+            font-weight: 900;
+            text-transform: uppercase;
+            padding: 2px 1px;
+            border-bottom: 1.5px solid #000;
+            letter-spacing: 0.3px;
+        }
+        .items-table td {
+            padding: 2px 1px;
+            vertical-align: top;
+            border-bottom: 1px dashed #bbb;
+            font-size: 7pt;
+            line-height: 1.4;
+        }
+        .items-table tr:last-child td { border-bottom: none; }
+        .c-num  { width: 6mm;  text-align: center; }
+        .c-model{ width: 24mm; }
+        .c-imei { width: 28mm; font-family: 'Courier New', monospace; font-size: 6.5pt; word-break: break-all; }
+        .c-orig { width: 14mm; font-size: 6.5pt; }
+        .tc     { text-align: center; font-weight: 700; }
+        .brand  { font-weight: 800; font-size: 7pt; }
+        .spec   { font-size: 6pt; color: #333; }
 
         /* PIE TIENDA */
-        .store-footer { font-size: 9pt; font-weight: 800; text-align: right; padding: 3px 0 4px; }
+        .store-footer { font-size: 9pt; font-weight: 800; text-align: right; padding: 3px 0 4px; border-top: 1.5px solid #000; margin-top: 2px; }
 
         /* PIE GENERAL */
         .receipt-footer {

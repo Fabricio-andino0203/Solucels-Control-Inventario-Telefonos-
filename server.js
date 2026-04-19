@@ -463,10 +463,12 @@ app.get('/api/transfers', (req, res) => {
         const { store, date_from, date_to } = req.query;
         let sql = `
             SELECT t.*, p.imei, m.name as model_name, m.ram, m.storage, m.image_url,
+                   b.name as brand_name,
                    s1.name as from_store, s2.name as to_store, s2.id as to_store_id
             FROM transfers t 
             JOIN phones p ON t.phone_id = p.id 
             JOIN phone_models m ON p.model_id = m.id
+            JOIN brands b ON m.brand_id = b.id
             JOIN stores s1 ON t.from_store_id = s1.id 
             JOIN stores s2 ON t.to_store_id = s2.id
             WHERE 1=1
