@@ -594,6 +594,262 @@ function generateTransfersPDF() {
     doc.open(); doc.write(htmlContent); doc.close();
     setTimeout(() => { printFrame.contentWindow.focus(); printFrame.contentWindow.print(); }, 700);
 }
+
+function generateTransfersPDF52mm() {
+    if (!state.transfers.length) {
+        showToast('No hay traslados para generar el reporte. Aplique filtros primero.', true);
+        return;
+    }
+
+    const storeFilter = document.getElementById('transferFilterStore');
+    const dateFrom = document.getElementById('transferFilterDateFrom')?.value || '';
+    const dateTo = document.getElementById('transferFilterDateTo')?.value || '';
+    const storeText = storeFilter?.options[storeFilter.selectedIndex]?.text || 'Todas las tiendas';
+    const logoUrl = `${window.location.protocol}//${window.location.host}/assets/images/branding/logo_solucels.png`;
+
+    let periodText = 'Todos los periodos';
+    if (dateFrom && dateTo) periodText = `${dateFrom} al ${dateTo}`;
+    else if (dateFrom) periodText = `Desde ${dateFrom}`;
+    else if (dateTo) periodText = `Hasta ${dateTo}`;
+
+    // Agrupar por tienda destino
+    const byStore = {};
+    state.transfers.forEach(t => {
+        const key = t.to_store;
+        if (!byStore[key]) byStore[key] = [];
+        byStore[key].push(t);
+    });
+
+    const genDate = new Date().toLocaleDateString('es-HN', { day:'2-digit', month:'2-digit', year:'numeric' });
+    const genTime = new Date().toLocaleTimeString('es-HN', { hour:'2-digit', minute:'2-digit', hour12:true });
+
+    // Secciones por tienda — estilo factura termica profesional, optimizado para 52mm
+    const storeRows = Object.entries(byStore).map(([store, items]) => `
+        <div class="store-section">
+            <div class="store-bar">${store.toUpperCase()}</div>
+            <div class="store-sub">${items.length} equipo${items.length !== 1 ? 's' : ''} recibido${items.length !== 1 ? 's' : ''}</div>
+            <div class="items-list">
+                ${items.map((t, i) => `
+                <div class="item-card">
+                    <div class="item-header">
+                        <span class="item-num">#${String(i+1).padStart(2,'0')}</span>
+                        <span class="item-model"><strong>${(t.brand_name || '').toUpperCase()}</strong> ${t.model_name}</span>
+                    </div>
+                    <div class="item-specs">${t.ram || '--'} / ${t.storage || '--'}</div>
+                    <div class="item-details">
+                        <div class="detail-row"><span class="lbl">IMEI:</span> <span class="val imei">${t.imei}</span></div>
+                        <div class="detail-row"><span class="lbl">Origen:</span> <span class="val orig">${t.from_store}</span></div>
+                    </div>
+                </div>`).join('')}
+            </div>
+            <div class="store-footer">
+                <span>Total equipos:</span> <strong>${items.length}</strong>
+            </div>
+        </div>
+    `).join('');
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Traslados - ${storeText}</title>
+    <style>
+        @page { size: 52mm auto; margin: 2mm; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 8.5pt;
+            color: #000;
+            background: #fff;
+            width: 48mm;
+            margin: 0 auto;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        /* ═══ LOGO ═══ */
+        .logo-wrap { text-align: center; margin-bottom: 3px; }
+        .logo-wrap img {
+            display: block;
+            margin: 0 auto;
+            max-width: 38mm;
+            max-height: 16mm;
+            filter: invert(1) brightness(0);
+            -webkit-filter: invert(1) brightness(0);
+        }
+
+        /* ═══ ENCABEZADO ═══ */
+        .rh {
+            text-align: center;
+            padding-bottom: 4px;
+            margin-bottom: 4px;
+            border-bottom: 1.5px solid #000;
+        }
+        .company  { font-size: 11pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; }
+        .subtitle { font-size: 8.5pt; font-weight: 700; margin-top: 2px; }
+        .gen-date { font-size: 7.5pt; margin-top: 2px; }
+
+        /* ═══ SEPARADORES ═══ */
+        .sep-solid  { border-top: 1.5px solid #000; margin: 4px 0; }
+        .sep-light  { border-top: 1px solid #000; margin: 3px 0; }
+        .sep-dashed { border-top: 1px dashed #000; margin: 3px 0; }
+
+        /* ═══ INFO META ═══ */
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 8pt;
+            padding: 1px 0;
+            line-height: 1.4;
+        }
+        .info-label { font-weight: 700; }
+        .info-value { text-align: right; }
+
+        /* ═══ BARRA TOTAL GENERAL ═══ */
+        .grand-total-bar {
+            background: #000;
+            color: #fff;
+            font-size: 9pt;
+            font-weight: 900;
+            text-align: center;
+            padding: 4px 0;
+            margin: 5px 0;
+            letter-spacing: 0.5px;
+        }
+
+        /* ═══ TIENDA ═══ */
+        .store-section { margin-bottom: 6px; }
+        .store-bar {
+            background: #000;
+            color: #fff;
+            font-size: 8.5pt;
+            font-weight: 900;
+            text-align: center;
+            padding: 3px 1px;
+            margin-bottom: 2px;
+        }
+        .store-sub {
+            font-size: 7.5pt;
+            text-align: center;
+            font-style: italic;
+            margin-bottom: 3px;
+        }
+
+        /* ═══ LISTA DE EQUIPOS (APILADA PARA 52mm) ═══ */
+        .items-list {
+            margin: 3px 0;
+        }
+        .item-card {
+            border-bottom: 1px solid #ccc;
+            padding: 4px 0;
+            margin-bottom: 2px;
+        }
+        .item-card:last-child {
+            border-bottom: 1.5px solid #000;
+        }
+        .item-header {
+            display: flex;
+            align-items: flex-start;
+            font-size: 8.5pt;
+            margin-bottom: 2px;
+        }
+        .item-num {
+            font-weight: 900;
+            margin-right: 4px;
+            min-width: 16px;
+        }
+        .item-model {
+            flex: 1;
+            line-height: 1.2;
+        }
+        .item-specs {
+            font-size: 7.5pt;
+            color: #333;
+            margin-left: 20px; /* alineado con modelo */
+            margin-bottom: 3px;
+        }
+        .item-details {
+            font-size: 7.5pt;
+            margin-left: 20px; /* alineado con modelo */
+            line-height: 1.3;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+        }
+        .lbl { font-weight: 700; }
+        .val { text-align: right; }
+        .imei { font-family: 'Courier New', Courier, monospace; font-size: 8.5pt; font-weight: 700; letter-spacing: -0.5px; }
+        .orig { font-size: 7.5pt; }
+
+        /* ═══ PIE DE TIENDA ═══ */
+        .store-footer {
+            font-size: 8.5pt;
+            text-align: right;
+            padding: 3px 0;
+        }
+
+        /* ═══ PIE GENERAL ═══ */
+        .receipt-footer {
+            font-size: 7.5pt;
+            text-align: center;
+            line-height: 1.6;
+            padding-top: 4px;
+            margin-top: 3px;
+        }
+
+        @media print {
+            body { width: 48mm; }
+            @page { size: 52mm auto; margin: 2mm; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ENCABEZADO -->
+    <div class="rh">
+        <div class="logo-wrap">
+            <img src="${logoUrl}" alt="Solucels" onerror="this.style.display='none'">
+        </div>
+        <div class="company">Solucels Control</div>
+        <div class="subtitle">Reporte de Traslados</div>
+        <div class="gen-date">${genDate} &nbsp;|&nbsp; ${genTime}</div>
+    </div>
+
+    <!-- META -->
+    <div class="info-row"><span class="info-label">Tienda:</span><span class="info-value">${storeText.toUpperCase()}</span></div>
+    <div class="info-row"><span class="info-label">Periodo:</span><span class="info-value">${periodText}</span></div>
+
+    <!-- TOTAL -->
+    <div class="grand-total-bar">TOTAL: ${state.transfers.length} EQUIPO${state.transfers.length !== 1 ? 'S' : ''}</div>
+
+    <!-- SECCIONES POR TIENDA -->
+    ${storeRows}
+
+    <!-- PIE -->
+    <div class="sep-solid"></div>
+    <div class="receipt-footer">
+        <strong>SOLUCELS CONTROL</strong><br>
+        Sistema de Inventario<br>
+        *** DOC INTERNO ***
+    </div>
+
+</body>
+</html>`;
+
+    let printFrame = document.getElementById('printFrame');
+    if (!printFrame) {
+        printFrame = document.createElement('iframe');
+        printFrame.id = 'printFrame';
+        printFrame.style.cssText = 'position:absolute;width:0;height:0;border:none;';
+        document.body.appendChild(printFrame);
+    }
+    showToast('Generando Recibo 52mm...');
+    const doc = printFrame.contentWindow.document;
+    doc.open(); doc.write(htmlContent); doc.close();
+    setTimeout(() => { printFrame.contentWindow.focus(); printFrame.contentWindow.print(); }, 700);
+}
 function renderSalesTable() {
     const filterType = document.getElementById('salesTypeFilter') ? document.getElementById('salesTypeFilter').value : 'ALL';
     let dataToRender = state.sales;
