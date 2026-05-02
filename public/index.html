@@ -175,18 +175,33 @@
             </div>
 
             <!-- FILTROS Y REPORTES -->
-            <div class="filters-bar" style="margin-top: 1rem; flex-wrap: wrap; justify-content: space-between;">
-                <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-                    <select id="salesTypeFilter" onchange="filterSalesView()" style="min-width: 180px;">
+            <div class="filters-bar" style="margin-top: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+                <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items: center; flex: 1;">
+                    <i class="fas fa-filter" style="color:var(--primary); font-size:1.1rem;"></i>
+                    <select id="salesFilterStore" onchange="filterSalesView()" style="min-width: 160px;">
+                        <option value="ALL">Todas las Tiendas</option>
+                    </select>
+                    <select id="salesFilterBrand" onchange="filterSalesView()" style="min-width: 150px;">
+                        <option value="ALL">Todas las Marcas</option>
+                    </select>
+                    <select id="salesTypeFilter" onchange="filterSalesView()" style="min-width: 160px;">
                         <option value="ALL">Todas las Ventas</option>
                         <option value="Contado">Solo Contado</option>
                         <option value="Crédito">Solo Crédito</option>
                         <option value="Mayorista">Solo Mayorista</option>
                     </select>
+                    
+                    <span style="color:var(--text-muted); margin: 0 0.25rem;">|</span>
+                    <i class="fas fa-calendar-alt" style="color:var(--primary); font-size:1.1rem;"></i>
+                    <input type="date" id="salesFilterDateFrom" onchange="filterSalesView()" class="input-date-premium" placeholder="Desde">
+                    <span style="color:var(--text-muted);">—</span>
+                    <input type="date" id="salesFilterDateTo" onchange="filterSalesView()" class="input-date-premium" placeholder="Hasta">
+                    
+                    <button class="btn btn-secondary" onclick="clearSalesFilters()" style="padding:0.6rem 1rem; min-height:40px;"><i class="fas fa-times"></i> Limpiar</button>
                 </div>
-                <button class="btn btn-primary" onclick="openReportsModal()"
+                <button class="btn btn-primary" onclick="generatePDFReport()"
                     style="background:var(--success); color:#fff; border:none; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);"><i
-                        class="fas fa-file-pdf"></i> Estadísticas y Cierre PDF</button>
+                        class="fas fa-file-pdf"></i> Reporte PDF Filtrado</button>
             </div>
 
             <div class="table-container mt-3">

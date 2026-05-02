@@ -569,10 +569,11 @@ app.post('/api/sales', (req, res) => {
 app.get('/api/sales', (req, res) => {
     try {
         res.json(db.prepare(`
-            SELECT sl.*, p.imei, m.name as model_name, m.ram, m.storage, s.name as store_name 
+            SELECT sl.*, p.imei, m.name as model_name, m.ram, m.storage, s.name as store_name, b.name as brand_name, s.id as store_id, m.brand_id
             FROM sales sl JOIN phones p ON sl.phone_id = p.id
             JOIN phone_models m ON p.model_id = m.id JOIN stores s ON sl.store_id = s.id
-            ORDER BY sl.sale_date DESC LIMIT 100
+            JOIN brands b ON m.brand_id = b.id
+            ORDER BY sl.sale_date DESC LIMIT 500
         `).all());
     } catch (err) { res.status(500).json({error: err.message}); }
 });

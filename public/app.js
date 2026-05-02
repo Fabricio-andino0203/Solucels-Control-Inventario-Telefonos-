@@ -212,6 +212,20 @@ function populateSelects() {
         if (tfCurrent) tfStoreFilter.value = tfCurrent;
     }
 
+    // Populate sales filters
+    const sfStoreFilter = document.getElementById('salesFilterStore');
+    if (sfStoreFilter) {
+        const sfCurrent = sfStoreFilter.value;
+        sfStoreFilter.innerHTML = '<option value="ALL">Todas las Tiendas</option>' + state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        if (sfCurrent) sfStoreFilter.value = sfCurrent;
+    }
+    const sfBrandFilter = document.getElementById('salesFilterBrand');
+    if (sfBrandFilter) {
+        const bfCurrent = sfBrandFilter.value;
+        sfBrandFilter.innerHTML = '<option value="ALL">Todas las Marcas</option>' + state.brands.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+        if (bfCurrent) sfBrandFilter.value = bfCurrent;
+    }
+
     // Restore selections
     if (s_filterStore) document.getElementById('filterStore').value = s_filterStore;
     if (s_filterBrand) document.getElementById('filterBrand').value = s_filterBrand;
@@ -850,18 +864,42 @@ function generateTransfersPDF52mm() {
     doc.open(); doc.write(htmlContent); doc.close();
     setTimeout(() => { printFrame.contentWindow.focus(); printFrame.contentWindow.print(); }, 700);
 }
-function renderSalesTable() {
+function getFilteredSales() {
     const filterType = document.getElementById('salesTypeFilter') ? document.getElementById('salesTypeFilter').value : 'ALL';
-    let dataToRender = state.sales;
+    const filterStore = document.getElementById('salesFilterStore') ? document.getElementById('salesFilterStore').value : 'ALL';
+    const filterBrand = document.getElementById('salesFilterBrand') ? document.getElementById('salesFilterBrand').value : 'ALL';
+    const dateFrom = document.getElementById('salesFilterDateFrom') ? document.getElementById('salesFilterDateFrom').value : '';
+    const dateTo = document.getElementById('salesFilterDateTo') ? document.getElementById('salesFilterDateTo').value : '';
 
-    if (filterType !== 'ALL') {
-        dataToRender = dataToRender.filter(s => {
-            if (filterType === 'Mayorista') return s.final_price_type === 'Mayorista';
-            if (filterType === 'Crédito') return s.sale_type === 'Crédito' || s.final_price_type === 'Crédito';
-            if (filterType === 'Contado') return (s.sale_type === 'Contado' && s.final_price_type !== 'Mayorista');
-            return true;
-        });
-    }
+    return state.sales.filter(s => {
+        if (filterType !== 'ALL') {
+            if (filterType === 'Mayorista' && s.final_price_type !== 'Mayorista') return false;
+            if (filterType === 'Crédito' && s.sale_type !== 'Crédito' && s.final_price_type !== 'Crédito') return false;
+            if (filterType === 'Contado' && (s.sale_type !== 'Contado' || s.final_price_type === 'Mayorista')) return false;
+        }
+        if (filterStore !== 'ALL' && String(s.store_id) !== String(filterStore)) return false;
+        if (filterBrand !== 'ALL' && String(s.brand_id) !== String(filterBrand)) return false;
+        
+        const saleD = new Date(s.sale_date);
+        saleD.setHours(0, 0, 0, 0); // Ignore time for filtering
+        if (dateFrom) {
+            const df = new Date(dateFrom);
+            df.setHours(0,0,0,0);
+            df.setDate(df.getDate() + 1); // Adjust timezone offset simply
+            if (saleD < df) return false;
+        }
+        if (dateTo) {
+            const dt = new Date(dateTo);
+            dt.setHours(23,59,59,999);
+            dt.setDate(dt.getDate() + 1); // Adjust timezone offset simply
+            if (saleD > dt) return false;
+        }
+        return true;
+    });
+}
+
+function renderSalesTable() {
+    const dataToRender = getFilteredSales();
 
     const tbody = document.querySelector('#salesTable tbody');
     if (!dataToRender.length) return tbody.innerHTML = '<tr><td colspan="6" class="text-center">No hay ventas registradas en este filtro</td></tr>';
@@ -869,13 +907,26 @@ function renderSalesTable() {
     let totalSales = 0;
     tbody.innerHTML = dataToRender.map(s => {
         totalSales += s.final_price;
-        return `<tr><td data-label="Fecha">${formatDate(s.sale_date)}</td><td data-label="Equipo"><strong>${s.model_name}</strong><br><small style="color:var(--text-primary)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br><small style="font-family:monospace">${s.imei}</small></td><td data-label="Tienda Venta">${s.store_name}</td><td data-label="Tipo"><span class="badge ${s.sale_type === 'Contado' ? 'badge-success' : 'badge-warning'}">${s.final_price_type || s.sale_type}</span></td><td data-label="Notas"><span style="font-size:0.85rem; color:var(--text-muted);">${s.notes || '-'}</span></td><td data-label="Precio (L.)" style="color:var(--success); font-weight:bold;">L. ${s.final_price.toLocaleString('en-US')}</td></tr>`
+        const formattedFullDate = formatDate(s.sale_date);
+        const [datePart, timePart, ampm] = formattedFullDate.split(' ');
+        const dateHtml = `<strong>${datePart}</strong><br><small style="color:var(--text-muted)">${timePart} ${ampm || ''}</small>`;
+
+        return `<tr><td data-label="Fecha">${dateHtml}</td><td data-label="Equipo"><strong>${s.model_name}</strong><br><small style="color:var(--text-primary)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br><small style="font-family:monospace">${s.imei}</small></td><td data-label="Tienda Venta">${s.store_name}</td><td data-label="Tipo"><span class="badge ${s.sale_type === 'Contado' ? 'badge-success' : 'badge-warning'}">${s.final_price_type || s.sale_type}</span></td><td data-label="Notas"><span style="font-size:0.85rem; color:var(--text-muted);">${s.notes || '-'}</span></td><td data-label="Precio (L.)" style="color:var(--success); font-weight:bold;">L. ${s.final_price.toLocaleString('en-US')}</td></tr>`
     }).join('');
     
     document.getElementById('stat-total-sales').innerText = totalSales.toLocaleString('en-US', { minimumFractionDigits: 2 });
 }
 
 function filterSalesView() {
+    renderSalesTable();
+}
+
+function clearSalesFilters() {
+    if(document.getElementById('salesTypeFilter')) document.getElementById('salesTypeFilter').value = 'ALL';
+    if(document.getElementById('salesFilterStore')) document.getElementById('salesFilterStore').value = 'ALL';
+    if(document.getElementById('salesFilterBrand')) document.getElementById('salesFilterBrand').value = 'ALL';
+    if(document.getElementById('salesFilterDateFrom')) document.getElementById('salesFilterDateFrom').value = '';
+    if(document.getElementById('salesFilterDateTo')) document.getElementById('salesFilterDateTo').value = '';
     renderSalesTable();
 }
 function calculateLiquidationDate(dateStr) {
@@ -1543,42 +1594,16 @@ function openReportsModal() {
 }
 
 function generatePDFReport() {
-    const monthVal = document.getElementById('reportMonth').value;
-    const periodVal = document.getElementById('reportPeriod').value;
-    if(!monthVal) return showToast('Seleccione un mes', true);
-    
-    // Parse target dates
-    const [year, month] = monthVal.split('-');
-    const m = parseInt(month) - 1;
-    const y = parseInt(year);
-    
-    let startDate = new Date(y, m, 1);
-    let endDate = new Date(y, m + 1, 0, 23, 59, 59); // end of month
-    
-    let periodText = 'Mes Completo';
-    if(periodVal === '15') {
-        endDate = new Date(y, m, 15, 23, 59, 59);
-        periodText = 'Primera Quincena (1-15)';
-    } else if(periodVal === '30') {
-        startDate = new Date(y, m, 16);
-        periodText = 'Segunda Quincena (16-Fin)';
-    }
-    
     const filterType = document.getElementById('salesTypeFilter') ? document.getElementById('salesTypeFilter').value : 'ALL';
+    const filterStore = document.getElementById('salesFilterStore') ? document.getElementById('salesFilterStore').value : 'ALL';
+    const filterBrand = document.getElementById('salesFilterBrand') ? document.getElementById('salesFilterBrand').value : 'ALL';
+    const dateFrom = document.getElementById('salesFilterDateFrom') ? document.getElementById('salesFilterDateFrom').value : '';
+    const dateTo = document.getElementById('salesFilterDateTo') ? document.getElementById('salesFilterDateTo').value : '';
     
-    // Filtramos respetando el tipo seleccionado en la interfaz
-    const filteredSales = state.sales.filter(s => {
-        const saleD = new Date(s.sale_date);
-        if (saleD < startDate || saleD > endDate) return false;
-        
-        if (filterType === 'Mayorista') return s.final_price_type === 'Mayorista';
-        if (filterType === 'Crédito') return s.sale_type === 'Crédito' || s.final_price_type === 'Crédito';
-        if (filterType === 'Contado') return (s.sale_type === 'Contado' && s.final_price_type !== 'Mayorista');
-        return true;
-    });
+    const filteredSales = getFilteredSales();
     
     if(filteredSales.length === 0){
-        showToast('No hay ventas de Contado en el periodo seleccionado para cerrar.', true);
+        showToast('No hay ventas para el filtro seleccionado.', true);
         return;
     }
     
@@ -1619,8 +1644,7 @@ function generatePDFReport() {
     
     const profit = totalSales - totalCosts;
     const sortedTop = Object.entries(topPhonesCount).sort((a,b) => b[1].count - a[1].count).slice(0, 10);
-    // NUEVA GENERACIÓN DE PDF VECTORIAL VÍA IFRAME
-    // ============================================
+    
     let printFrame = document.getElementById('printFrame');
     if (!printFrame) {
         printFrame = document.createElement('iframe');
@@ -1632,7 +1656,6 @@ function generatePDFReport() {
         document.body.appendChild(printFrame);
     }
     
-    closeModal('reportsModal');
     showToast('Generando Documento... Por favor espere.');
 
     const logoHtml = `<img src="${window.location.protocol}//${window.location.host}/assets/images/branding/logo_solucels.png" style="max-height: 80px; margin-bottom: 5px; filter: brightness(0) invert(0);" alt="Solucels Logo" onerror="this.style.display='none'">`;
@@ -1643,7 +1666,15 @@ function generatePDFReport() {
     if(filterType === 'Crédito') filterDisplay = 'Solo Ventas a Crédito';
     if(filterType === 'Mayorista') filterDisplay = 'Solo Ventas Mayoristas';
 
-    const periodDisplay = `${periodText} de ${startDate.toLocaleString('es-HN', {month: 'long', year: 'numeric'})} | ${filterDisplay}`;
+    let periodText = 'Todos los tiempos';
+    if(dateFrom && dateTo) periodText = `${dateFrom} al ${dateTo}`;
+    else if(dateFrom) periodText = `Desde ${dateFrom}`;
+    else if(dateTo) periodText = `Hasta ${dateTo}`;
+
+    const storeText = filterStore !== 'ALL' ? document.getElementById('salesFilterStore').options[document.getElementById('salesFilterStore').selectedIndex].text : 'Todas las Tiendas';
+    const brandText = filterBrand !== 'ALL' ? document.getElementById('salesFilterBrand').options[document.getElementById('salesFilterBrand').selectedIndex].text : 'Todas las Marcas';
+
+    const periodDisplay = `${periodText} | ${filterDisplay} | Tienda: ${storeText} | Marca: ${brandText}`;
 
     const htmlContent = `<!DOCTYPE html>
     <html lang="es">
