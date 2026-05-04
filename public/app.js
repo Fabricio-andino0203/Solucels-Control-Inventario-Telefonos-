@@ -1356,7 +1356,14 @@ async function markAsPaid(id) {
         fetchLiquidations(); 
         
         if (s) {
-            const msg = `✅ Equipo Liquidado para su Venta\n\nTienda: ${s.store_name}\nModelo: ${s.model_name}\nEspecificaciones: ${s.ram || 'N/A'} / ${s.storage || 'N/A'}\nIMEI: ${s.imei}\nCantidad: 1`;
+            const msg = `✅ *Equipo Liquidado para su Venta*\n\n` +
+                        `🏪 *Tienda:* ${s.store_name}\n` +
+                        `📱 *Modelo:* ${s.model_name}\n` +
+                        `⚙️ *Especificaciones:* ${s.ram || 'N/A'} / ${s.storage || 'N/A'}\n` +
+                        `🔢 *IMEI:* ${s.imei}\n` +
+                        `📦 *Cantidad:* 1\n\n` +
+                        `💵 *Prima:* L. ${Number(s.prima || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}\n` +
+                        `💰 *Liquidado:* L. ${Number(s.saldo || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
         }
     } catch (err) { showToast(err.message, true); }
