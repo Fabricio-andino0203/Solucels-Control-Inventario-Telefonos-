@@ -1356,14 +1356,14 @@ async function markAsPaid(id) {
         fetchLiquidations(); 
         
         if (s) {
-            const msg = `✅ *Equipo Liquidado para su Venta*\n\n` +
-                        `🏪 *Tienda:* ${s.store_name}\n` +
-                        `📱 *Modelo:* ${s.model_name}\n` +
-                        `⚙️ *Especificaciones:* ${s.ram || 'N/A'} / ${s.storage || 'N/A'}\n` +
-                        `🔢 *IMEI:* ${s.imei}\n` +
-                        `📦 *Cantidad:* 1\n\n` +
-                        `💵 *Prima:* L. ${Number(s.prima || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}\n` +
-                        `💰 *Liquidado:* L. ${Number(s.saldo || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            const msg = `\u2705 *Equipo Liquidado para su Venta*\n\n` +
+                        `\uD83C\uDFEA *Tienda:* ${s.store_name}\n` +
+                        `\uD83D\uDCF1 *Modelo:* ${s.model_name}\n` +
+                        `\u2699\uFE0F *Especificaciones:* ${s.ram || 'N/A'} / ${s.storage || 'N/A'}\n` +
+                        `\uD83D\uDD22 *IMEI:* ${s.imei}\n` +
+                        `\uD83D\uDCE6 *Cantidad:* 1\n\n` +
+                        `\uD83D\uDCB5 *Prima:* L. ${Number(s.prima || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}\n` +
+                        `\uD83D\uDCB0 *Liquidado:* L. ${Number(s.saldo || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
         }
     } catch (err) { showToast(err.message, true); }
