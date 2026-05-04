@@ -1,7 +1,7 @@
 let API_URL = '';
 let currentUser = localStorage.getItem('slc_user') || '';
 let state = {
-    stores: [], brands: [], models: [], phones: [], transfers: [], sales: [], liquidations: [], users: [],
+    stores: [], brands: [], models: [], phones: [], transfers: [], sales: [], liquidations: [], liquidationsHistory: [], users: [],
     currentSalePhone: null
 };
 let html5QrcodeScanner = null;
@@ -336,6 +336,9 @@ function renderTransfersTable() {
             <td data-label="IMEI / S/N"><span style="font-family:monospace">${t.imei}</span></td>
             <td data-label="Tienda Origen"><span class="badge badge-warning">${t.from_store}</span></td>
             <td data-label="Tienda Destino (Recibe)"><span class="badge badge-success">${t.to_store}</span></td>
+            <td data-label="Acciones" class="actions-cell text-right">
+                ${currentUser === 'admin' ? `<button class="btn-icon text-danger" onclick="revertTransfer(${t.id})" title="Revertir Traslado"><i class="fas fa-undo"></i></button>` : ''}
+            </td>
         </tr>`).join('');
 }
 
@@ -911,7 +914,8 @@ function renderSalesTable() {
         const [datePart, timePart, ampm] = formattedFullDate.split(' ');
         const dateHtml = `<strong>${datePart}</strong><br><small style="color:var(--text-muted)">${timePart} ${ampm || ''}</small>`;
 
-        return `<tr><td data-label="Fecha">${dateHtml}</td><td data-label="Equipo"><strong>${s.model_name}</strong><br><small style="color:var(--text-primary)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br><small style="font-family:monospace">${s.imei}</small></td><td data-label="Tienda Venta">${s.store_name}</td><td data-label="Tipo"><span class="badge ${s.sale_type === 'Contado' ? 'badge-success' : 'badge-warning'}">${s.final_price_type || s.sale_type}</span></td><td data-label="Notas"><span style="font-size:0.85rem; color:var(--text-muted);">${s.notes || '-'}</span></td><td data-label="Precio (L.)" style="color:var(--success); font-weight:bold;">L. ${s.final_price.toLocaleString('en-US')}</td></tr>`
+        const actionHtml = currentUser === 'admin' ? `<button class="btn-icon text-danger" onclick="revertSale(${s.id})" title="Eliminar Venta"><i class="fas fa-undo"></i></button>` : '';
+        return `<tr><td data-label="Fecha">${dateHtml}</td><td data-label="Equipo"><strong>${s.model_name}</strong><br><small style="color:var(--text-primary)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br><small style="font-family:monospace">${s.imei}</small></td><td data-label="Tienda Venta">${s.store_name}</td><td data-label="Tipo"><span class="badge ${s.sale_type === 'Contado' ? 'badge-success' : 'badge-warning'}">${s.final_price_type || s.sale_type}</span></td><td data-label="Notas"><span style="font-size:0.85rem; color:var(--text-muted);">${s.notes || '-'}</span></td><td data-label="Precio (L.)" style="color:var(--success); font-weight:bold;">L. ${s.final_price.toLocaleString('en-US')}</td><td data-label="Acciones" class="actions-cell text-right">${actionHtml}</td></tr>`
     }).join('');
     
     document.getElementById('stat-total-sales').innerText = totalSales.toLocaleString('en-US', { minimumFractionDigits: 2 });
@@ -1831,4 +1835,79 @@ function generatePDFReport() {
         printFrame.contentWindow.focus();
         printFrame.contentWindow.print();
     }, 500);
+}
+
+async function fetchLiquidationsHistory() { try { const res = await fetchAuth(`${API_URL}/liquidations/history`); state.liquidationsHistory = await res.json(); renderLiquidationsHistory(); } catch (e) { console.error(e); } }
+
+function renderLiquidationsHistory() {
+    const tbody = document.querySelector('#liquidationsHistoryTable tbody');
+    if (!tbody) return;
+    const query = (document.getElementById('liquidationsHistorySearch')?.value || '').toLowerCase();
+    
+    let filtered = state.liquidationsHistory || [];
+    if (query) {
+        filtered = filtered.filter(s => s.imei.toLowerCase().includes(query) || s.model_name.toLowerCase().includes(query));
+    }
+    
+    if (!filtered.length) return tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No hay liquidaciones en el historial</td></tr>';
+    
+    tbody.innerHTML = filtered.map(s => {
+        const actionHtml = `
+            <button class="btn-icon text-primary" onclick="resendLiquidationMessage(${s.id})" title="Reenviar WhatsApp"><i class="fab fa-whatsapp"></i></button>
+            ${currentUser === 'admin' ? `<button class="btn-icon text-danger" onclick="revertLiquidation(${s.id})" title="Revertir Liquidación"><i class="fas fa-undo"></i></button>` : ''}
+        `;
+        return `<tr>
+            <td data-label="Fecha Venta">${formatDate(s.sale_date)}</td>
+            <td data-label="Equipo"><strong>${s.model_name}</strong><br><small style="color:var(--text-primary)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br><small>${s.imei}</small></td>
+            <td data-label="Tienda">${s.store_name}</td>
+            <td data-label="Precio Final">L. ${s.final_price.toLocaleString('en-US')}</td>
+            <td data-label="Prima">L. ${s.prima.toLocaleString('en-US')}</td>
+            <td data-label="Estado"><span class="badge badge-success">Pagado</span></td>
+            <td data-label="Acciones" class="actions-cell text-right">${actionHtml}</td>
+        </tr>`;
+    }).join('');
+}
+
+function resendLiquidationMessage(id) {
+    const s = state.liquidationsHistory.find(x => x.id === id);
+    if (!s) return;
+    const msg = `\u2705 *Equipo Liquidado para su Venta*\n\n` +
+                `\uD83C\uDFEA *Tienda:* ${s.store_name}\n` +
+                `\uD83D\uDCF1 *Modelo:* ${s.model_name}\n` +
+                `\u2699\uFE0F *Especificaciones:* ${s.ram || 'N/A'} / ${s.storage || 'N/A'}\n` +
+                `\uD83D\uDD22 *IMEI:* ${s.imei}\n` +
+                `\uD83D\uDCE6 *Cantidad:* 1\n\n` +
+                `\uD83D\uDCB5 *Prima:* L. ${Number(s.prima || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}\n` +
+                `\uD83D\uDCB0 *Liquidado:* L. ${Number(s.final_price - s.prima).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+}
+
+async function revertSale(id) {
+    if (!confirm('¿Estás seguro de que deseas eliminar esta venta y regresar el teléfono a disponible? (Esta acción no se puede deshacer)')) return;
+    try {
+        const res = await fetchAuth(`${API_URL}/sales/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.json()).error);
+        showToast('Venta revertida exitosamente');
+        await fetchAllData();
+    } catch (err) { showToast(err.message, true); }
+}
+
+async function revertTransfer(id) {
+    if (!confirm('¿Estás seguro de que deseas revertir este traslado?')) return;
+    try {
+        const res = await fetchAuth(`${API_URL}/transfers/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.json()).error);
+        showToast('Traslado revertido exitosamente');
+        await fetchAllData();
+    } catch (err) { showToast(err.message, true); }
+}
+
+async function revertLiquidation(id) {
+    if (!confirm('¿Estás seguro de que deseas revertir la liquidación? El equipo volverá a estado Pendiente de Pago.')) return;
+    try {
+        const res = await fetchAuth(`${API_URL}/liquidations/${id}/revert`, { method: 'PUT' });
+        if (!res.ok) throw new Error((await res.json()).error);
+        showToast('Liquidación revertida exitosamente');
+        await fetchAllData();
+    } catch (err) { showToast(err.message, true); }
 }

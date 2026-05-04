@@ -492,6 +492,22 @@ app.get('/api/transfers', (req, res) => {
     } catch (err) { res.status(500).json({error: err.message}); }
 });
 
+app.delete('/api/transfers/:id', (req, res) => {
+    try {
+        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
+        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo administrador puede revertir traslados."});
+
+        const transfer = db.prepare('SELECT * FROM transfers WHERE id=?').get(req.params.id);
+        if(!transfer) return res.status(404).json({error: "Traslado no encontrado."});
+
+        db.transaction(() => {
+            db.prepare("UPDATE phones SET store_id=? WHERE id=?").run(transfer.from_store_id, transfer.phone_id);
+            db.prepare("DELETE FROM transfers WHERE id=?").run(req.params.id);
+        })();
+        res.json({ success: true });
+    } catch(err) { res.status(400).json({error: err.message}); }
+});
+
 // ==========================================
 // SALES (BLIND MASTER CATALOG PRICING)
 // ==========================================
@@ -578,6 +594,22 @@ app.get('/api/sales', (req, res) => {
     } catch (err) { res.status(500).json({error: err.message}); }
 });
 
+app.delete('/api/sales/:id', (req, res) => {
+    try {
+        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
+        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo administrador puede revertir ventas."});
+
+        const sale = db.prepare('SELECT * FROM sales WHERE id=?').get(req.params.id);
+        if(!sale) return res.status(404).json({error: "Venta no encontrada."});
+
+        db.transaction(() => {
+            db.prepare("UPDATE phones SET status='Disponible' WHERE id=?").run(sale.phone_id);
+            db.prepare("DELETE FROM sales WHERE id=?").run(req.params.id);
+        })();
+        res.json({ success: true });
+    } catch(err) { res.status(400).json({error: err.message}); }
+});
+
 // ==========================================
 // LIQUIDATIONS
 // ==========================================
@@ -598,6 +630,33 @@ app.put('/api/liquidations/:id/pay', (req, res) => {
         const sale = db.prepare('SELECT * FROM sales WHERE id=?').get(req.params.id);
         if(!sale) return res.status(404).json({error: "Venta no encontrada."});
         db.prepare("UPDATE sales SET payment_status='Pagado', saldo=0 WHERE id=?").run(req.params.id);
+        res.json({ success: true });
+    } catch (err) { res.status(400).json({error: err.message}); }
+});
+
+app.get('/api/liquidations/history', (req, res) => {
+    try {
+        res.json(db.prepare(`
+            SELECT sl.*, p.imei, m.name as model_name, m.ram, m.storage, s.name as store_name 
+            FROM sales sl JOIN phones p ON sl.phone_id = p.id
+            JOIN phone_models m ON p.model_id = m.id JOIN stores s ON sl.store_id = s.id
+            WHERE sl.payment_status = 'Pagado' AND sl.sale_type = 'Crédito'
+            ORDER BY sl.sale_date DESC LIMIT 500
+        `).all());
+    } catch (err) { res.status(500).json({error: err.message}); }
+});
+
+app.put('/api/liquidations/:id/revert', (req, res) => {
+    try {
+        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
+        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo administrador puede revertir liquidaciones."});
+
+        const sale = db.prepare('SELECT * FROM sales WHERE id=?').get(req.params.id);
+        if(!sale) return res.status(404).json({error: "Venta no encontrada."});
+        
+        // Recalcular saldo original
+        const newSaldo = sale.final_price - sale.prima;
+        db.prepare("UPDATE sales SET payment_status='Pendiente', saldo=? WHERE id=?").run(newSaldo, req.params.id);
         res.json({ success: true });
     } catch (err) { res.status(400).json({error: err.message}); }
 });
