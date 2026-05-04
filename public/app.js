@@ -1348,7 +1348,18 @@ async function saveSale(e) {
 
 async function markAsPaid(id) {
     if (!confirm("¿Confirmar que la financiera ha depositado el saldo y liquidar deuda al 100%?")) return;
-    try { const res = await fetchAuth(`${API_URL}/liquidations/${id}/pay`, { method: 'PUT' }); if (!res.ok) throw new Error((await res.json()).error); showToast('Deuda Liquidada'); fetchLiquidations(); } catch (err) { showToast(err.message, true); }
+    const s = state.liquidations.find(x => x.id === id);
+    try { 
+        const res = await fetchAuth(`${API_URL}/liquidations/${id}/pay`, { method: 'PUT' }); 
+        if (!res.ok) throw new Error((await res.json()).error); 
+        showToast('Deuda Liquidada'); 
+        fetchLiquidations(); 
+        
+        if (s) {
+            const msg = `✅ Equipo Liquidado para su Venta\n\nTienda: ${s.store_name}\nModelo: ${s.model_name}\nEspecificaciones: ${s.ram || 'N/A'} / ${s.storage || 'N/A'}\nIMEI: ${s.imei}\nCantidad: 1`;
+            window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+        }
+    } catch (err) { showToast(err.message, true); }
 }
 
 function generateCatalog() { window.open(`${window.location.protocol}//${window.location.host}/api/export-catalog`, '_blank'); }
