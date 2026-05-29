@@ -2,6 +2,7 @@ let API_URL = '';
 let currentUser = localStorage.getItem('slc_user') || '';
 let state = {
     stores: [], brands: [], models: [], phones: [], transfers: [], sales: [], liquidations: [], liquidationsHistory: [], users: [],
+    auditPhones: [], auditResults: {}, revisionPhones: [], auditHistory: [],
     currentSalePhone: null
 };
 let html5QrcodeScanner = null;
@@ -78,10 +79,14 @@ function switchTab(tabId) {
     if (tabId === 'inventory-tab') navItems[0].classList.add('active');
     if (tabId === 'sales-tab') navItems[1].classList.add('active');
     if (tabId === 'liquidations-tab') navItems[2].classList.add('active');
-    if (tabId === 'transfers-tab') navItems[3].classList.add('active');
-    if (tabId === 'bulk-tab') navItems[4].classList.add('active');
-    if (tabId === 'promotions-tab') navItems[5].classList.add('active');
-    if (tabId === 'config-tab') navItems[6].classList.add('active');
+    if (tabId === 'liquidations-history-tab') navItems[3].classList.add('active');
+    if (tabId === 'transfers-tab') navItems[4].classList.add('active');
+    if (tabId === 'audit-tab') navItems[5].classList.add('active');
+    if (tabId === 'audit-history-tab') navItems[6].classList.add('active');
+    if (tabId === 'bulk-tab') navItems[7].classList.add('active');
+    if (tabId === 'promotions-tab') navItems[8].classList.add('active');
+    if (tabId === 'revision-tab') navItems[9].classList.add('active');
+    if (tabId === 'config-tab') navItems[10].classList.add('active');
     if (tabId === 'users-tab') {
         const usersNav = document.getElementById('nav-users');
         if (usersNav) usersNav.classList.add('active');
@@ -93,6 +98,9 @@ function switchTab(tabId) {
     else if (tabId === 'liquidations-tab') { fetchLiquidations(); document.getElementById('liquidationsImeiSearch').focus(); }
     else if (tabId === 'bulk-tab') { document.getElementById('bulkImeiList').focus(); }
     else if (tabId === 'promotions-tab') { fetchConfig(); renderPromotions(); }
+    else if (tabId === 'audit-tab') { document.getElementById('auditImeiSearch').focus(); }
+    else if (tabId === 'audit-history-tab') { fetchAuditHistory(); }
+    else if (tabId === 'revision-tab') { fetchRevisionPhones(); }
     else if (tabId === 'users-tab') fetchUsers();
     else if (tabId === 'inventory-tab') {
         fetchAllData(); // Refresh everything correctly
@@ -246,8 +254,10 @@ function populateSelects() {
     // Populate bulk selects (same options)
     const bModel = document.getElementById('bulkModel');
     const bStore = document.getElementById('bulkStore');
+    const aStore = document.getElementById('auditStoreSelect');
     if (bModel) bModel.innerHTML = modelOptions;
     if (bStore) bStore.innerHTML = '<option value="">Seleccione Tienda...</option>' + state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    if (aStore) aStore.innerHTML = '<option value="">Seleccione Tienda a Auditar...</option>' + state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
 
     // IMEI counter for bulk textarea
     const bulkTextarea = document.getElementById('bulkImeiList');
@@ -1910,4 +1920,360 @@ async function revertLiquidation(id) {
         showToast('Liquidación revertida exitosamente');
         await fetchAllData();
     } catch (err) { showToast(err.message, true); }
+}
+
+// ==========================================
+// AUDIT MODULE
+// ==========================================
+async function loadAudit() {
+    const storeId = document.getElementById('auditStoreSelect').value;
+    if (!storeId) return showToast('Seleccione una tienda primero', true);
+    
+    try {
+        const res = await fetchAuth(`${API_URL}/phones/audit?store_id=${storeId}`);
+        state.auditPhones = await res.json();
+        
+        // Initialize all as 'Sin Revisar'
+        state.auditResults = {};
+        state.auditPhones.forEach(p => {
+            state.auditResults[p.id] = 'Sin Revisar';
+        });
+        
+        document.getElementById('auditResponsible').value = '';
+        document.getElementById('auditImeiSearch').value = '';
+        renderAuditTable();
+        updateAuditStats();
+    } catch(err) {
+        showToast(err.message, true);
+    }
+}
+
+function renderAuditTable(filteredPhones = null) {
+    const tbody = document.querySelector('#auditTable tbody');
+    const phones = filteredPhones || state.auditPhones;
+    
+    if (!phones.length) {
+        return tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No hay equipos disponibles o no coinciden con la búsqueda</td></tr>';
+    }
+    
+    tbody.innerHTML = phones.map(p => {
+        const result = state.auditResults[p.id];
+        const isConforme = result === 'Conforme';
+        const isNotFound = result === 'No Encontrado';
+        
+        const isUnreviewed = result === 'Sin Revisar';
+        
+        return `
+        <tr>
+            <td data-label="Marca / Modelo">
+                <small style="color:var(--text-muted);">${p.brand_name}</small><br>
+                <strong>${p.model_name}</strong>
+            </td>
+            <td data-label="IMEI / S/N">
+                <span style="font-family:monospace; font-size:1.1rem;">${p.imei}</span>
+            </td>
+            <td data-label="Verificación Física" class="text-right">
+                <div class="audit-toggle">
+                    <button class="toggle-btn toggle-unreviewed ${isUnreviewed ? 'active' : ''}" 
+                            onclick="toggleAuditItem(${p.id}, 'Sin Revisar')" title="Sin Revisar">
+                        <i class="fas fa-minus"></i>
+                    </button>
+                    <button class="toggle-btn toggle-conforme ${isConforme ? 'active' : ''}" 
+                            onclick="toggleAuditItem(${p.id}, 'Conforme')">
+                        <i class="fas fa-check"></i> Conforme
+                    </button>
+                    <button class="toggle-btn toggle-no-found ${isNotFound ? 'active' : ''}" 
+                            onclick="toggleAuditItem(${p.id}, 'No Encontrado')">
+                        <i class="fas fa-times"></i> No Encontrado
+                    </button>
+                </div>
+            </td>
+        </tr>
+        `;
+    }).join('');
+}
+
+function toggleAuditItem(phoneId, result) {
+    state.auditResults[phoneId] = result;
+    filterAuditByImei();
+    updateAuditStats();
+}
+
+function filterAuditByImei() {
+    const q = document.getElementById('auditImeiSearch').value.toLowerCase().trim();
+    if (!q) {
+        renderAuditTable();
+    } else {
+        const filtered = state.auditPhones.filter(p => 
+            p.imei.toLowerCase().includes(q) || 
+            p.model_name.toLowerCase().includes(q)
+        );
+        renderAuditTable(filtered);
+    }
+}
+
+function clearAuditSearch() {
+    document.getElementById('auditImeiSearch').value = '';
+    renderAuditTable();
+    document.getElementById('auditImeiSearch').focus();
+}
+
+function updateAuditStats() {
+    const total = state.auditPhones.length;
+    let conformes = 0;
+    let notFound = 0;
+    let unreviewed = 0;
+    
+    for (const key in state.auditResults) {
+        if (state.auditResults[key] === 'Conforme') conformes++;
+        if (state.auditResults[key] === 'No Encontrado') notFound++;
+        if (state.auditResults[key] === 'Sin Revisar') unreviewed++;
+    }
+    
+    document.getElementById('auditStatTotal').innerText = total;
+    document.getElementById('auditStatConformes').innerText = conformes;
+    document.getElementById('auditStatMissing').innerText = notFound;
+    
+    const unrevEl = document.getElementById('auditStatUnreviewed');
+    if (unrevEl) unrevEl.innerText = unreviewed;
+}
+
+async function finalizeAudit() {
+    const storeSelect = document.getElementById('auditStoreSelect');
+    const storeId = storeSelect.value;
+    const storeName = storeSelect.options[storeSelect.selectedIndex]?.text || '';
+    const responsibleName = document.getElementById('auditResponsible').value.trim();
+
+    if (!storeId || !state.auditPhones.length) {
+        return showToast('Cargue un inventario para auditar primero', true);
+    }
+    if (!responsibleName) {
+        return showToast('Ingrese el nombre del responsable de la tienda', true);
+    }
+    
+    let notFound = 0;
+    let unreviewed = 0;
+    const items = state.auditPhones.map(p => {
+        const res = state.auditResults[p.id];
+        if (res === 'No Encontrado') notFound++;
+        if (res === 'Sin Revisar') unreviewed++;
+        return { phone_id: p.id, result: res, ...p };
+    });
+    
+    if (unreviewed > 0) {
+        return showToast(`No puede finalizar. Aún hay ${unreviewed} equipo(s) "Sin Revisar".`, true);
+    }
+    
+    if (!confirm(`¿Está seguro de finalizar la auditoría?\n\nEquipos marcados como 'No Encontrado' (${notFound}) serán pasados a estado 'En Revisión' y ya no estarán disponibles para venta.`)) {
+        return;
+    }
+    
+    try {
+        const res = await fetchAuth(`${API_URL}/audits`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ store_id: storeId, items, responsible_name: responsibleName })
+        });
+        
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        
+        showAuditReport(data);
+        generateAuditPDF(data, storeName, responsibleName, items);
+        
+        // Reset audit state
+        state.auditPhones = [];
+        state.auditResults = {};
+        document.getElementById('auditStoreSelect').value = '';
+        document.getElementById('auditResponsible').value = '';
+        renderAuditTable();
+        updateAuditStats();
+        
+        // Refresh inventory if we are admin maybe? 
+        // We'll let the user navigate naturally.
+        fetchAllData();
+        
+    } catch(err) {
+        showToast(err.message, true);
+    }
+}
+
+function showAuditReport(data) {
+    const reportHtml = `
+    <div class="audit-summary" style="text-align:center; padding:1rem;">
+        <h2 style="color:var(--text-primary); margin-bottom:1rem;"><i class="fas fa-clipboard-check"></i> Auditoría Finalizada</h2>
+        <p style="color:var(--text-muted); margin-bottom:1.5rem;">Los datos han sido guardados en el sistema.</p>
+        <div style="display:flex; justify-content:center; gap:3rem; margin-top:2rem;">
+            <div>
+                <div style="font-size:3.5rem; font-weight:900; color:var(--success);">${data.conformes}</div>
+                <div style="color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-size:0.9rem; font-weight:bold;">Conformes</div>
+            </div>
+            <div>
+                <div style="font-size:3.5rem; font-weight:900; color:var(--danger);">${data.no_encontrados}</div>
+                <div style="color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-size:0.9rem; font-weight:bold;">En Revisión</div>
+            </div>
+        </div>
+    </div>
+    `;
+    
+    const modalWrap = document.createElement('div');
+    modalWrap.className = 'modal-overlay active';
+    modalWrap.innerHTML = `
+        <div class="modal" style="max-width:500px;">
+            ${reportHtml}
+            <div style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-color);">
+                <button class="btn btn-primary w-100" style="padding:1rem; font-size:1.1rem;" onclick="this.closest('.modal-overlay').remove()">Aceptar</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modalWrap);
+}
+
+// ==========================================
+// REVISION MODULE
+// ==========================================
+async function fetchRevisionPhones() {
+    try {
+        const res = await fetchAuth(`${API_URL}/phones/en-revision`);
+        state.revisionPhones = await res.json();
+        renderRevisionTable();
+    } catch(err) {
+        console.error(err);
+        showToast('Error cargando equipos en revisión', true);
+    }
+}
+
+function renderRevisionTable() {
+    const tbody = document.querySelector('#revisionTable tbody');
+    if (!state.revisionPhones.length) {
+        return tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted" style="padding:3rem;">No hay equipos en revisión actualmente. ¡Excelente!</td></tr>';
+    }
+    
+    tbody.innerHTML = state.revisionPhones.map(p => `
+        <tr>
+            <td data-label="ID">${p.id}</td>
+            <td data-label="Marca / Modelo">
+                <small style="color:var(--text-muted);">${p.brand_name}</small><br>
+                <strong>${p.model_name}</strong>
+            </td>
+            <td data-label="IMEI / S/N"><span style="font-family:monospace">${p.imei}</span></td>
+            <td data-label="Tienda Reportada"><span class="badge badge-warning">${p.store_name}</span></td>
+            <td data-label="Acciones Admin" class="actions-cell text-right">
+                <button class="btn btn-primary" onclick="resolvePhone(${p.id})"><i class="fas fa-undo"></i> Restaurar a Disponible</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function resolvePhone(id) {
+    if(!confirm('¿Está seguro de restaurar este equipo a "Disponible"? Volverá a aparecer en el inventario para la venta.')) return;
+    try {
+        const res = await fetchAuth(`${API_URL}/phones/${id}/resolver`, { method: 'PUT' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showToast('Equipo restaurado exitosamente');
+        fetchRevisionPhones();
+        fetchAllData(); // refresh inventory
+    } catch(err) {
+        showToast(err.message, true);
+    }
+}
+
+function generateAuditPDF(data, storeName, responsibleName, items) {
+    const logoUrl = `${window.location.protocol}//${window.location.host}/assets/images/branding/logo_solucels.png`;
+    const genDate = new Date().toLocaleDateString('es-HN', { day:'2-digit', month:'2-digit', year:'numeric' });
+    const genTime = new Date().toLocaleTimeString('es-HN', { hour:'2-digit', minute:'2-digit', hour12:true });
+    
+    // Group items by result
+    const conformes = items.filter(i => i.result === 'Conforme');
+    const noEncontrados = items.filter(i => i.result === 'No Encontrado');
+    
+    let htmlContent = `<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Auditoría - ${storeName}</title>
+    <style>
+        @page { size: 80mm auto; margin: 5mm 4mm; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #000; width: 72mm; margin: 0 auto; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .logo-wrap { text-align: center; margin-bottom: 3px; }
+        .logo-wrap img { max-width: 44mm; max-height: 18mm; filter: invert(1) brightness(0); -webkit-filter: invert(1) brightness(0); }
+        .rh { text-align: center; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 2px solid #000; }
+        .company { font-size: 13pt; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; }
+        .subtitle { font-size: 9pt; font-weight: 700; margin-top: 2px; }
+        .gen-date { font-size: 8.5pt; margin-top: 3px; }
+        .info-row { display: table; width: 100%; font-size: 8.5pt; padding: 2px 0; line-height: 1.6; }
+        .info-label { display: table-cell; font-weight: 700; width: 25mm; }
+        .info-value { display: table-cell; text-align: right; }
+        .sep-solid { border-top: 2px solid #000; margin: 5px 0; }
+        .section-title { font-size: 9.5pt; font-weight: 900; background: #000; color: #fff; text-align: center; padding: 4px 0; margin: 6px 0; text-transform: uppercase; }
+        .items-table { width: 100%; border-collapse: collapse; font-size: 8pt; margin: 2px 0; text-align: left; }
+        .items-table th { font-size: 7.5pt; font-weight: 900; text-transform: uppercase; padding: 3px 2px; border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; background: #f0f0f0; }
+        .items-table td { padding: 3px 2px; vertical-align: top; border-bottom: 1px solid #ccc; line-height: 1.4; }
+        .items-table tr:last-child td { border-bottom: 1.5px solid #000; }
+        .receipt-footer { font-size: 8pt; text-align: center; line-height: 1.8; padding-top: 5px; margin-top: 4px; }
+    </style>
+</head>
+<body>
+    <div class="rh">
+        <div class="logo-wrap">
+            <img src="${logoUrl}" alt="Solucels" onerror="this.style.display='none'">
+        </div>
+        <div class="company">Solucels Control</div>
+        <div class="subtitle">Reporte de Auditoría (ID #${data.auditId})</div>
+        <div class="gen-date">${genDate} &nbsp;|&nbsp; ${genTime}</div>
+    </div>
+
+    <div class="info-row"><span class="info-label">Tienda:</span><span class="info-value">${storeName.toUpperCase()}</span></div>
+    <div class="info-row"><span class="info-label">Realizado por:</span><span class="info-value">${currentUser.toUpperCase()}</span></div>
+    <div class="info-row"><span class="info-label">Responsable:</span><span class="info-value">${responsibleName.toUpperCase()}</span></div>
+    <div class="info-row"><span class="info-label">Total Auditado:</span><span class="info-value">${items.length} EQUIPOS</span></div>
+    
+    <div class="section-title">CONFORMES: ${data.conformes}</div>`;
+    
+    if (conformes.length > 0) {
+        htmlContent += `<table class="items-table">
+            <thead><tr><th style="width:7mm">#</th><th>Modelo</th><th style="width:26mm">IMEI</th></tr></thead>
+            <tbody>
+                ${conformes.map((p, i) => `<tr><td style="text-align:center; font-weight:700;">${String(i+1).padStart(2,'0')}</td><td>${p.model_name}</td><td style="font-family:monospace; font-weight:700;">${p.imei}</td></tr>`).join('')}
+            </tbody>
+        </table>`;
+    } else {
+        htmlContent += `<div style="text-align:center; font-size:8pt; font-style:italic;">Ningún equipo conforme</div>`;
+    }
+
+    htmlContent += `<div class="section-title" style="background:#dc2626;">NO ENCONTRADOS (EN REVISIÓN): ${data.no_encontrados}</div>`;
+    
+    if (noEncontrados.length > 0) {
+        htmlContent += `<table class="items-table">
+            <thead><tr><th style="width:7mm">#</th><th>Modelo</th><th style="width:26mm">IMEI</th></tr></thead>
+            <tbody>
+                ${noEncontrados.map((p, i) => `<tr><td style="text-align:center; font-weight:700;">${String(i+1).padStart(2,'0')}</td><td>${p.model_name}</td><td style="font-family:monospace; font-weight:700;">${p.imei}</td></tr>`).join('')}
+            </tbody>
+        </table>`;
+    } else {
+        htmlContent += `<div style="text-align:center; font-size:8pt; font-style:italic;">Todos los equipos fueron encontrados</div>`;
+    }
+
+    htmlContent += `
+    <div class="sep-solid"></div>
+    <div class="receipt-footer">
+        <strong>SOLUCELS CONTROL</strong><br>
+        *** REPORTE GENERADO AUTOMÁTICAMENTE ***
+    </div>
+</body>
+</html>`;
+
+    let printFrame = document.getElementById('printFrame');
+    if (!printFrame) {
+        printFrame = document.createElement('iframe');
+        printFrame.id = 'printFrame';
+        printFrame.style.cssText = 'position:absolute;width:0;height:0;border:none;';
+        document.body.appendChild(printFrame);
+    }
+    showToast('Generando Reporte de Auditoría...');
+    const doc = printFrame.contentWindow.document;
+    doc.open(); doc.write(htmlContent); doc.close();
+    setTimeout(() => { printFrame.contentWindow.focus(); printFrame.contentWindow.print(); }, 700);
 }

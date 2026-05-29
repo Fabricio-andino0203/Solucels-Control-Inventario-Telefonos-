@@ -49,8 +49,11 @@
             <li onclick="switchTab('liquidations-tab')"><i class="fas fa-hand-holding-usd"></i> Liquidaciones</li>
             <li onclick="switchTab('liquidations-history-tab')"><i class="fas fa-history"></i> Hist. Liquidaciones</li>
             <li onclick="switchTab('transfers-tab')"><i class="fas fa-exchange-alt"></i> Traslados</li>
+            <li onclick="switchTab('audit-tab')"><i class="fas fa-clipboard-check"></i> Auditoría</li>
+            <li onclick="switchTab('audit-history-tab')"><i class="fas fa-clipboard-list"></i> Hist. Auditorías</li>
             <li onclick="switchTab('bulk-tab')"><i class="fas fa-layer-group"></i> Ingreso Masivo</li>
             <li onclick="switchTab('promotions-tab')"><i class="fas fa-percent"></i> Promociones</li>
+            <li onclick="switchTab('revision-tab')"><i class="fas fa-search-location"></i> En Revisión</li>
             <li onclick="switchTab('config-tab')"><i class="fas fa-cog"></i> Configuración</li>
             <li id="nav-users" onclick="switchTab('users-tab')" style="display: none;"><i class="fas fa-users-cog"></i>
                 Usuarios</li>
@@ -489,6 +492,127 @@
                 </div>
             </div>
             <div class="results-grid" id="promotionsList"></div>
+        </div>
+
+        <!-- AUDIT TAB -->
+        <div id="audit-tab" class="tab-content">
+            <div class="audit-header">
+                <div class="title-area">
+                    <h2>Auditoría Física de Tiendas</h2>
+                    <p>Comprobación de inventario con modo rápido</p>
+                </div>
+                <button class="btn btn-primary" onclick="finalizeAudit()" style="background:var(--success); color:#fff; font-size:1.1rem; padding:1rem 2rem; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);">
+                    <i class="fas fa-check-double"></i> Finalizar Auditoría
+                </button>
+            </div>
+
+            <div class="search-box-premium" style="margin-bottom: 1.5rem; border-color:var(--primary); background:rgba(37,99,235,0.05);">
+                <div class="search-input-wrapper">
+                    <i class="fas fa-barcode"></i>
+                    <input type="text" id="auditImeiSearch" placeholder="Buscar / Escanear IMEI o Modelo..."
+                        onkeyup="filterAuditByImei()" autocomplete="off">
+                </div>
+                <button class="btn btn-secondary btn-large" onclick="clearAuditSearch()"><i class="fas fa-times"></i></button>
+            </div>
+
+            <div class="filters-bar" style="margin-bottom: 1.5rem; flex-wrap:wrap; gap: 0.75rem;">
+                <div style="display:flex; flex:1; gap:0.5rem; align-items:center;">
+                    <select id="auditStoreSelect" required style="min-width: 200px; border-color:var(--primary);"></select>
+                    <input type="text" id="auditResponsible" placeholder="Nombre del responsable..." style="min-width:200px;" required>
+                    <button class="btn btn-primary" onclick="loadAudit()"><i class="fas fa-sync-alt"></i> Cargar Inventario</button>
+                </div>
+                <div class="audit-stats" style="display:flex; gap:1rem;">
+                    <div class="badge" style="background:var(--card-bg); font-size:1rem; padding:0.5rem 1rem;">
+                        <span style="color:var(--text-muted)">Total:</span> <span id="auditStatTotal" style="color:#fff; font-weight:700;">0</span>
+                    </div>
+                    <div class="badge" style="background:rgba(255,255,255,0.1); font-size:1rem; padding:0.5rem 1rem;">
+                        <span style="color:#a1a1aa">Sin Revisar:</span> <span id="auditStatUnreviewed" style="font-weight:700; color:#fff;">0</span>
+                    </div>
+                    <div class="badge badge-success" style="font-size:1rem; padding:0.5rem 1rem;">
+                        <span style="color:var(--success)">Conformes:</span> <span id="auditStatConformes" style="font-weight:700;">0</span>
+                    </div>
+                    <div class="badge badge-danger" style="font-size:1rem; padding:0.5rem 1rem;">
+                        <span style="color:var(--danger)">No Encontrados:</span> <span id="auditStatMissing" style="font-weight:700;">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-container mt-3" style="max-height: 60vh; overflow-y: auto;">
+                <table id="auditTable">
+                    <thead style="position: sticky; top: 0; z-index: 10; background: var(--card-bg);">
+                        <tr>
+                            <th>Marca / Modelo</th>
+                            <th>IMEI / S/N</th>
+                            <th class="text-right">Verificación Física</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- AUDIT HISTORY TAB -->
+        <div id="audit-history-tab" class="tab-content">
+            <header>
+                <div>
+                    <h1>Historial de Auditorías</h1>
+                    <p class="subtitle">Registro de revisiones de inventario</p>
+                </div>
+                <button class="btn btn-secondary" onclick="fetchAuditHistory()"><i class="fas fa-sync"></i> Refrescar</button>
+            </header>
+            
+            <div class="search-box-premium" style="margin-bottom: 1.5rem;">
+                <div class="search-input-wrapper">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="auditHistorySearch" placeholder="Buscar por tienda o responsable..."
+                        onkeyup="renderAuditHistoryTable()">
+                </div>
+            </div>
+
+            <div class="table-container mt-3">
+                <table id="auditHistoryTable">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Tienda</th>
+                            <th>Auditor / Responsable</th>
+                            <th>Estadísticas</th>
+                            <th class="text-right">Reporte</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- REVISION TAB -->
+        <div id="revision-tab" class="tab-content">
+            <header>
+                <div>
+                    <h1><i class="fas fa-search-location" style="color:var(--warning)"></i> Equipos en Revisión</h1>
+                    <p class="subtitle">Equipos marcados como "No Encontrado" durante auditorías</p>
+                </div>
+                <button class="btn btn-secondary" onclick="fetchRevisionPhones()"><i class="fas fa-sync"></i> Refrescar</button>
+            </header>
+            
+            <div class="form-info-box" style="margin-bottom:1.5rem; border-color:rgba(245,158,11,0.3); background:rgba(245,158,11,0.07);">
+                <i class="fas fa-exclamation-triangle" style="color:#fbbf24"></i> <strong>Atención:</strong> Estos equipos fueron reportados como perdidos o no encontrados en sucursal. Fueron sacados del stock disponible. Resuélvalos tras investigación.
+            </div>
+
+            <div class="table-container mt-3">
+                <table id="revisionTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Marca / Modelo</th>
+                            <th>IMEI / S/N</th>
+                            <th>Tienda Reportada</th>
+                            <th class="text-right">Acciones Admin</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
         </div>
 
         <!-- 6. CONFIGURATION -->

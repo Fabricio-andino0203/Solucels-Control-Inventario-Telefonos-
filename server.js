@@ -122,7 +122,31 @@ function initDB() {
             FOREIGN KEY(phone_id) REFERENCES phones(id),
             FOREIGN KEY(store_id) REFERENCES stores(id)
         );
+        CREATE TABLE IF NOT EXISTS audits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            store_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            user_name TEXT NOT NULL,
+            total_items INTEGER DEFAULT 0,
+            conformes INTEGER DEFAULT 0,
+            no_encontrados INTEGER DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'Completada',
+            created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+            FOREIGN KEY(store_id) REFERENCES stores(id),
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        );
+        CREATE TABLE IF NOT EXISTS audit_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            audit_id INTEGER NOT NULL,
+            phone_id INTEGER NOT NULL,
+            result TEXT NOT NULL DEFAULT 'Conforme',
+            FOREIGN KEY(audit_id) REFERENCES audits(id),
+            FOREIGN KEY(phone_id) REFERENCES phones(id)
+        );
     `);
+
+    // === SAFE MIGRATION: Audits table ===
+    try { db.exec('ALTER TABLE audits ADD COLUMN responsible_name TEXT'); } catch(e) { /* exists */ }
 
     // === SAFE MIGRATION: Ensure ram & storage columns exist ===
     try { db.exec('ALTER TABLE phone_models ADD COLUMN ram TEXT'); } catch(e) { /* exists */ }
@@ -781,6 +805,133 @@ app.get(['/api/export-catalog', '/catalogo_existencias.html'], (req, res) => {
         });
         res.send(outputHtml);
     } catch(err) { res.status(500).send(err.message); }
+});
+
+// ==========================================
+// AUDITS & REVISIONS
+// ==========================================
+app.get('/api/phones/audit', (req, res) => {
+    const { store_id } = req.query;
+    if (!store_id) return res.status(400).json({ error: "Se requiere store_id" });
+    try {
+        const rows = db.prepare(`
+            SELECT p.id, p.imei, m.name as model_name, b.name as brand_name
+            FROM phones p
+            JOIN phone_models m ON p.model_id = m.id
+            JOIN brands b ON m.brand_id = b.id
+            WHERE p.store_id = ? AND p.status = 'Disponible'
+            ORDER BY b.name, m.name
+        `).all(store_id);
+        res.json(rows);
+    } catch(err) { res.status(500).json({error: err.message}); }
+});
+
+app.post('/api/audits', (req, res) => {
+    const { store_id, items, responsible_name } = req.body;
+    if (!store_id || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "Datos de auditoría inválidos." });
+    }
+    try {
+        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
+        
+        let conformes = 0;
+        let no_encontrados = 0;
+        const total_items = items.length;
+        
+        const executeAudit = db.transaction(() => {
+            const auditResult = db.prepare(`
+                INSERT INTO audits (store_id, user_id, user_name, responsible_name, total_items, conformes, no_encontrados) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            `).run(store_id, req.user.id, u.username, responsible_name || 'No especificado', total_items, 0, 0);
+            
+            const auditId = auditResult.lastInsertRowid;
+            
+            const insertItem = db.prepare(`INSERT INTO audit_items (audit_id, phone_id, result) VALUES (?, ?, ?)`);
+            const setRevision = db.prepare(`UPDATE phones SET status='En Revisión' WHERE id=?`);
+            
+            for (const item of items) {
+                insertItem.run(auditId, item.phone_id, item.result);
+                if (item.result === 'No Encontrado') {
+                    setRevision.run(item.phone_id);
+                    no_encontrados++;
+                } else {
+                    conformes++;
+                }
+            }
+            
+            db.prepare(`UPDATE audits SET conformes=?, no_encontrados=? WHERE id=?`).run(conformes, no_encontrados, auditId);
+            
+            return auditId;
+        });
+        
+        const auditId = executeAudit();
+        res.json({ success: true, auditId, conformes, no_encontrados });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/audits', (req, res) => {
+    try {
+        const rows = db.prepare(`
+            SELECT a.*, s.name as store_name
+            FROM audits a
+            JOIN stores s ON a.store_id = s.id
+            ORDER BY a.created_at DESC LIMIT 100
+        `).all();
+        res.json(rows);
+    } catch(err) { res.status(500).json({error: err.message}); }
+});
+
+app.get('/api/audits/:id', (req, res) => {
+    try {
+        const audit = db.prepare(`
+            SELECT a.*, s.name as store_name
+            FROM audits a
+            JOIN stores s ON a.store_id = s.id
+            WHERE a.id = ?
+        `).get(req.params.id);
+        
+        if (!audit) return res.status(404).json({error: "No encontrada"});
+        
+        const items = db.prepare(`
+            SELECT ai.*, p.imei, m.name as model_name
+            FROM audit_items ai
+            JOIN phones p ON ai.phone_id = p.id
+            JOIN phone_models m ON p.model_id = m.id
+            WHERE ai.audit_id = ?
+        `).all(req.params.id);
+        
+        res.json({ audit, items });
+    } catch(err) { res.status(500).json({error: err.message}); }
+});
+
+app.get('/api/phones/en-revision', (req, res) => {
+    try {
+        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
+        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo administrador."});
+        
+        const rows = db.prepare(`
+            SELECT p.*, m.name as model_name, b.name as brand_name, s.name as store_name
+            FROM phones p
+            JOIN phone_models m ON p.model_id = m.id
+            JOIN brands b ON m.brand_id = b.id
+            JOIN stores s ON p.store_id = s.id
+            WHERE p.status = 'En Revisión'
+            ORDER BY p.id DESC
+        `).all();
+        res.json(rows);
+    } catch(err) { res.status(500).json({error: err.message}); }
+});
+
+app.put('/api/phones/:id/resolver', (req, res) => {
+    try {
+        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
+        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo administrador."});
+        
+        db.prepare("UPDATE phones SET status='Disponible' WHERE id=?").run(req.params.id);
+        res.json({ success: true });
+    } catch(err) { res.status(500).json({error: err.message}); }
 });
 
 const PORT = process.env.PORT || 3000;
