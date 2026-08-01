@@ -127,7 +127,7 @@ body {
     transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     padding: 0;
 }
-.acc-group.open > .acc-menu { max-height: 1200px; }
+.acc-group.open > .acc-menu { max-height: 2000px; opacity: 1; }
 
 .acc-menu li {
     display: flex;

@@ -264,6 +264,9 @@ async function fetchSales() {
 async function fetchLiquidations() { try { const res = await fetchAuth(`${API_URL}/liquidations`); state.liquidations = await res.json(); renderLiquidationsTable(); } catch (e) { console.error(e); } }
 async function fetchUsers() { 
     try { 
+        if (!state.stores || state.stores.length === 0) {
+            await fetchConfig();
+        }
         const res = await fetchAuth(`${API_URL}/users`); 
         if (!res.ok) {
             const errData = await res.json();
