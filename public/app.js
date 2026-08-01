@@ -2497,9 +2497,9 @@ async function executeReset() {
                 <span>📚 Catálogo Maestro:</span><strong>${data.summary.phone_models} modelos ✓</strong>
             </div>`;
 
-        // Reset local state
+        // Reset local state and re-render UI to show zeros
         state.phones = []; state.sales = []; state.transfers = [];
-        renderInventoryTable(); renderSalesTable();
+        renderPhonesTable([]); renderSalesTable();
         showToast('Base de datos reseteada correctamente. Catálogo Maestro conservado.');
 
         // Auto-close modal after 4 seconds
