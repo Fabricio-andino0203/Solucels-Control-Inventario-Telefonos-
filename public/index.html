@@ -43,22 +43,104 @@
                 style="color: #fff;">Solucels Control</span>
             <button class="close-sidebar-btn" onclick="toggleSidebar()"><i class="fas fa-times"></i></button>
         </div>
-        <ul class="nav">
-            <li class="active" onclick="switchTab('inventory-tab')"><i class="fas fa-mobile-alt"></i> Equipos</li>
-            <li onclick="switchTab('sales-tab')"><i class="fas fa-shopping-cart"></i> Ventas</li>
-            <li id="nav-warranties" onclick="switchTab('warranties-tab')"><i class="fas fa-file-signature"></i> Garantías</li>
-            <li onclick="switchTab('liquidations-tab')"><i class="fas fa-hand-holding-usd"></i> Liquidaciones</li>
-            <li onclick="switchTab('liquidations-history-tab')"><i class="fas fa-history"></i> Hist. Liquidaciones</li>
-            <li onclick="switchTab('transfers-tab')"><i class="fas fa-exchange-alt"></i> Traslados</li>
-            <li onclick="switchTab('audit-tab')"><i class="fas fa-clipboard-check"></i> Auditoría</li>
-            <li onclick="switchTab('audit-history-tab')"><i class="fas fa-clipboard-list"></i> Hist. Auditorías</li>
-            <li onclick="switchTab('bulk-tab')"><i class="fas fa-layer-group"></i> Ingreso Masivo</li>
-            <li onclick="switchTab('promotions-tab')"><i class="fas fa-percent"></i> Promociones</li>
-            <li onclick="switchTab('revision-tab')"><i class="fas fa-search-location"></i> En Revisión</li>
-            <li onclick="switchTab('config-tab')"><i class="fas fa-cog"></i> Configuración</li>
-            <li id="nav-users" onclick="switchTab('users-tab')" style="display: none;"><i class="fas fa-users-cog"></i>
-                Usuarios</li>
-        </ul>
+
+        <!-- ACCORDION NAV -->
+        <nav class="accordion-nav" id="accordionNav">
+
+            <!-- ═══ 📦 INVENTARIO ═══ -->
+            <div class="acc-group" data-group="inventario">
+                <button class="acc-header" onclick="toggleAccordion('inventario')">
+                    <span><i class="fas fa-boxes acc-icon"></i> Inventario</span>
+                    <i class="fas fa-chevron-down acc-arrow"></i>
+                </button>
+                <ul class="acc-menu">
+                    <li data-tab="inventory-tab" onclick="switchTab('inventory-tab')">
+                        <i class="fas fa-mobile-alt"></i> Equipos Disponibles
+                    </li>
+                    <li data-tab="bulk-tab" onclick="switchTab('bulk-tab')" data-admin="true">
+                        <i class="fas fa-layer-group"></i> Ingreso Masivo
+                    </li>
+                    <li data-tab="transfers-tab" onclick="switchTab('transfers-tab')">
+                        <i class="fas fa-exchange-alt"></i> Traslados
+                    </li>
+                    <li data-tab="config-tab" onclick="switchTab('config-tab')" data-admin="true">
+                        <i class="fas fa-book-open"></i> Catálogo Maestro
+                    </li>
+                </ul>
+            </div>
+
+            <!-- ═══ 🛒 PUNTO DE VENTA ═══ -->
+            <div class="acc-group" data-group="ventas">
+                <button class="acc-header" onclick="toggleAccordion('ventas')">
+                    <span><i class="fas fa-shopping-cart acc-icon"></i> Punto de Venta</span>
+                    <i class="fas fa-chevron-down acc-arrow"></i>
+                </button>
+                <ul class="acc-menu">
+                    <li data-tab="sales-tab" onclick="switchTab('sales-tab')">
+                        <i class="fas fa-cash-register"></i> Registrar / Historial Ventas
+                    </li>
+                    <li data-tab="liquidations-tab" onclick="switchTab('liquidations-tab')" data-admin="true">
+                        <i class="fas fa-hand-holding-usd"></i> Liquidaciones
+                    </li>
+                    <li data-tab="liquidations-history-tab" onclick="switchTab('liquidations-history-tab')" data-admin="true">
+                        <i class="fas fa-history"></i> Hist. Liquidaciones
+                    </li>
+                    <li data-tab="warranties-tab" onclick="switchTab('warranties-tab')" id="nav-warranties">
+                        <i class="fas fa-file-signature"></i> Garantías
+                    </li>
+                </ul>
+            </div>
+
+            <!-- ═══ 🏷️ PROMOCIONES ═══ -->
+            <div class="acc-group" data-group="promociones" data-admin="true">
+                <button class="acc-header" onclick="toggleAccordion('promociones')">
+                    <span><i class="fas fa-percent acc-icon"></i> Promociones</span>
+                    <i class="fas fa-chevron-down acc-arrow"></i>
+                </button>
+                <ul class="acc-menu">
+                    <li data-tab="promotions-tab" onclick="switchTab('promotions-tab')">
+                        <i class="fas fa-tag"></i> Gestionar Promociones
+                    </li>
+                </ul>
+            </div>
+
+            <!-- ═══ 🔍 AUDITORÍA ═══ -->
+            <div class="acc-group" data-group="auditoria" data-admin="true">
+                <button class="acc-header" onclick="toggleAccordion('auditoria')">
+                    <span><i class="fas fa-clipboard-check acc-icon"></i> Auditoría</span>
+                    <i class="fas fa-chevron-down acc-arrow"></i>
+                </button>
+                <ul class="acc-menu">
+                    <li data-tab="audit-tab" onclick="switchTab('audit-tab')">
+                        <i class="fas fa-clipboard-check"></i> Nueva Auditoría
+                    </li>
+                    <li data-tab="audit-history-tab" onclick="switchTab('audit-history-tab')">
+                        <i class="fas fa-clipboard-list"></i> Historial Auditorías
+                    </li>
+                    <li data-tab="revision-tab" onclick="switchTab('revision-tab')">
+                        <i class="fas fa-search-location"></i> En Revisión
+                    </li>
+                </ul>
+            </div>
+
+            <!-- ═══ ⚙️ CONFIGURACIÓN ═══ -->
+            <div class="acc-group" data-group="configuracion" data-admin="true">
+                <button class="acc-header" onclick="toggleAccordion('configuracion')">
+                    <span><i class="fas fa-cog acc-icon"></i> Configuración</span>
+                    <i class="fas fa-chevron-down acc-arrow"></i>
+                </button>
+                <ul class="acc-menu">
+                    <li data-tab="config-tab" onclick="switchTab('config-tab')">
+                        <i class="fas fa-sliders-h"></i> Ajustes del Sistema
+                    </li>
+                    <li data-tab="users-tab" onclick="switchTab('users-tab')" id="nav-users">
+                        <i class="fas fa-users-cog"></i> Usuarios y Permisos
+                    </li>
+                </ul>
+            </div>
+
+        </nav>
+
         <div class="bottom-nav">
             <button class="btn btn-secondary w-100" onclick="generateCatalog()">
                 <i class="fas fa-external-link-alt"></i> Catálogo Público
