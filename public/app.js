@@ -1,6 +1,7 @@
 let API_URL = '';
 let currentUser = localStorage.getItem('slc_user') || '';
 let currentRole = localStorage.getItem('slc_role') || 'admin';
+let currentStoreId = localStorage.getItem('slc_store_id') || null;
 let state = {
     stores: [], brands: [], models: [], phones: [], transfers: [], sales: [], liquidations: [], liquidationsHistory: [], users: [],
     auditPhones: [], auditResults: {}, revisionPhones: [], auditHistory: [],
@@ -49,33 +50,47 @@ function toggleAdminFeatures() {
 function applyRolePermissions() {
     const isAdmin = currentRole === 'admin';
 
-    // Accordion groups: hide entire group if admin-only and not admin
-    document.querySelectorAll('.acc-group[data-admin="true"]').forEach(group => {
-        group.style.display = isAdmin ? 'block' : 'none';
+    // Accordion groups & direct buttons: hide if data-admin="true" and not admin
+    document.querySelectorAll('.acc-group[data-admin="true"], .acc-direct-btn[data-admin="true"]').forEach(el => {
+        el.style.display = isAdmin ? 'block' : 'none';
     });
 
-    // Individual submenu items with data-admin
+    // Submenu items: hide if data-admin="true" and not admin
     document.querySelectorAll('.acc-menu li[data-admin="true"]').forEach(li => {
         li.style.display = isAdmin ? 'flex' : 'none';
     });
 
-    // nav-users item
     const navUsers = document.getElementById('nav-users');
     if (navUsers) navUsers.style.display = isAdmin ? 'flex' : 'none';
 
-    // Hide add button for vendedores
+    // Hide add button for vendedores in inventory
     if (!isAdmin) {
         document.querySelectorAll('#inventory-tab header .btn-primary').forEach(b => {
             if (b.textContent.includes('Añadir')) b.style.display = 'none';
         });
-    }
+        
+        // Lock inventory store filter to assigned store for vendedor
+        const storeFilter = document.getElementById('inventoryStoreFilter');
+        if (storeFilter && currentStoreId) {
+            storeFilter.value = currentStoreId;
+            storeFilter.disabled = true;
+        }
 
-    // Auto-open Inventario group on load for vendedor
-    if (!isAdmin) {
+        // Auto-open Inventario group on load for vendedor
         const invGroup = document.querySelector('.acc-group[data-group="inventario"]');
         if (invGroup && !invGroup.classList.contains('open')) {
             invGroup.classList.add('open');
         }
+
+        // If currently on an admin tab, redirect to inventory-tab
+        const currentActiveTab = document.querySelector('.tab-content.active')?.id;
+        const adminTabs = ['dashboard-tab', 'bulk-tab', 'config-tab', 'liquidations-tab', 'liquidations-history-tab', 'promotions-tab', 'audit-tab', 'audit-history-tab', 'revision-tab', 'users-tab'];
+        if (!currentActiveTab || adminTabs.includes(currentActiveTab)) {
+            switchTab('inventory-tab');
+        }
+    } else {
+        const storeFilter = document.getElementById('inventoryStoreFilter');
+        if (storeFilter) storeFilter.disabled = false;
     }
 }
 async function checkAuthAndInit() {
@@ -88,12 +103,28 @@ async function handleLogin(e) {
         const res = await fetch(`${API_URL}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: document.getElementById('loginUsername').value, password: document.getElementById('loginPassword').value }) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
-        localStorage.setItem('slc_token', data.token); localStorage.setItem('slc_user', data.username); localStorage.setItem('slc_role', data.role); currentUser = data.username; currentRole = data.role;
+        localStorage.setItem('slc_token', data.token); 
+        localStorage.setItem('slc_user', data.username); 
+        localStorage.setItem('slc_role', data.role);
+        if (data.store_id) localStorage.setItem('slc_store_id', data.store_id);
+        else localStorage.removeItem('slc_store_id');
+        
+        currentUser = data.username; 
+        currentRole = data.role;
+        currentStoreId = data.store_id || null;
+
         document.getElementById('loginOverlay').classList.add('hidden'); showToast('Bienvenido');
         toggleAdminFeatures(); fetchAllData(); document.getElementById('loginPassword').value = '';
     } catch (err) { showToast(err.message, true); }
 }
-function logout() { localStorage.removeItem('slc_token'); localStorage.removeItem('slc_user'); localStorage.removeItem('slc_role'); currentUser = ''; currentRole = 'admin'; document.getElementById('loginOverlay').classList.remove('hidden'); }
+function logout() { 
+    localStorage.removeItem('slc_token'); 
+    localStorage.removeItem('slc_user'); 
+    localStorage.removeItem('slc_role'); 
+    localStorage.removeItem('slc_store_id');
+    currentUser = ''; currentRole = 'admin'; currentStoreId = null;
+    document.getElementById('loginOverlay').classList.remove('hidden'); 
+}
 
 async function fetchAuth(url, options = {}) {
     if (!options.headers) options.headers = {};
@@ -106,36 +137,51 @@ async function fetchAuth(url, options = {}) {
 // FETCH DATA
 async function fetchAllData() { await Promise.all([fetchConfig(), fetchInventory()]); fetchTransfers(); fetchSales(); fetchLiquidations(); if (currentUser === 'admin') fetchUsers(); }
 function switchTab(tabId) {
+    const isAdmin = currentRole === 'admin';
+    const adminTabs = ['dashboard-tab', 'bulk-tab', 'config-tab', 'liquidations-tab', 'liquidations-history-tab', 'promotions-tab', 'audit-tab', 'audit-history-tab', 'revision-tab', 'users-tab'];
+
+    // Block Vendedor from accessing admin tabs
+    if (!isAdmin && adminTabs.includes(tabId)) {
+        showToast('Acceso denegado. Función exclusiva para administradores.', true);
+        tabId = 'inventory-tab';
+    }
+
     // Activate tab content
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     const tabEl = document.getElementById(tabId);
     if (tabEl) tabEl.classList.add('active');
 
-    // Mark active nav item via data-tab (handles duplicates: config-tab appears in Inventario & Configuración)
-    document.querySelectorAll('.acc-menu li').forEach(li => li.classList.remove('active'));
-    // Select the first visible matching item
+    // Remove active class from all menu items & direct buttons
+    document.querySelectorAll('.acc-menu li, .acc-direct-btn').forEach(el => el.classList.remove('active'));
+
+    // Highlight direct button if matching data-tab
+    const directBtn = document.querySelector(`.acc-direct-btn[data-tab="${tabId}"]`);
+    if (directBtn) {
+        directBtn.classList.add('active');
+        document.querySelectorAll('.acc-group.open').forEach(g => g.classList.remove('open'));
+    }
+
+    // Highlight submenu item if matching data-tab
     const activeItem = document.querySelector(`.acc-menu li[data-tab="${tabId}"]:not([style*="display: none"])`) ||
                        document.querySelector(`.acc-menu li[data-tab="${tabId}"]`);
     if (activeItem) {
         activeItem.classList.add('active');
-        // Auto-open the parent accordion group
         const parentGroup = activeItem.closest('.acc-group');
         if (parentGroup && !parentGroup.classList.contains('open')) {
-            // Close others first (accordion behaviour)
             document.querySelectorAll('.acc-group.open').forEach(g => g.classList.remove('open'));
             parentGroup.classList.add('open');
         }
     }
 
     if (window.innerWidth <= 820) toggleSidebar();
-    if (tabId === 'dashboard-tab') { loadDashboard(); }
-    else if (tabId === 'transfers-tab') { applyTransferFilters(); document.getElementById('transfersImeiSearch').focus(); }
-    else if (tabId === 'sales-tab') { fetchSales(); document.getElementById('salesImeiSearch').focus(); }
-    else if (tabId === 'warranties-tab') { fetchWarranties(); document.getElementById('warrantiesSearch').focus(); }
-    else if (tabId === 'liquidations-tab') { fetchLiquidations(); document.getElementById('liquidationsImeiSearch').focus(); }
-    else if (tabId === 'bulk-tab') { document.getElementById('bulkImeiList').focus(); }
+    if (tabId === 'dashboard-tab' && isAdmin) { loadDashboard(); }
+    else if (tabId === 'transfers-tab') { applyTransferFilters(); document.getElementById('transfersImeiSearch')?.focus(); }
+    else if (tabId === 'sales-tab') { fetchSales(); document.getElementById('salesImeiSearch')?.focus(); }
+    else if (tabId === 'warranties-tab') { fetchWarranties(); document.getElementById('warrantiesSearch')?.focus(); }
+    else if (tabId === 'liquidations-tab') { fetchLiquidations(); document.getElementById('liquidationsImeiSearch')?.focus(); }
+    else if (tabId === 'bulk-tab') { document.getElementById('bulkImeiList')?.focus(); }
     else if (tabId === 'promotions-tab') { fetchConfig(); renderPromotions(); }
-    else if (tabId === 'audit-tab') { document.getElementById('auditImeiSearch').focus(); }
+    else if (tabId === 'audit-tab') { document.getElementById('auditImeiSearch')?.focus(); }
     else if (tabId === 'audit-history-tab') { fetchAuditHistory(); }
     else if (tabId === 'revision-tab') { fetchRevisionPhones(); }
     else if (tabId === 'users-tab') fetchUsers();
@@ -1238,37 +1284,94 @@ async function genericPost(type, payload) {
 }
 
 // USER MANAGEMENT
+function toggleUserStoreField() {
+    const roleSelect = document.getElementById('newUserRole');
+    const storeGroup = document.getElementById('newUserStoreGroup');
+    const storeSelect = document.getElementById('newUserStore');
+    if (!roleSelect || !storeGroup) return;
+
+    if (roleSelect.value === 'vendedor') {
+        storeGroup.style.display = 'block';
+        if (storeSelect) storeSelect.required = true;
+        if (storeSelect && (storeSelect.options.length <= 1 || storeSelect.options[1].text === '')) {
+            storeSelect.innerHTML = '<option value="">-- Seleccionar Sucursal --</option>' +
+                state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        }
+    } else {
+        storeGroup.style.display = 'none';
+        if (storeSelect) { storeSelect.required = false; storeSelect.value = ''; }
+    }
+}
+
 function renderUsers() {
     const ul = document.getElementById('usersList');
     if (!ul) return;
+
+    const storeSelect = document.getElementById('newUserStore');
+    if (storeSelect && state.stores.length > 0) {
+        const curVal = storeSelect.value;
+        storeSelect.innerHTML = '<option value="">-- Seleccionar Sucursal --</option>' +
+            state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        if (curVal) storeSelect.value = curVal;
+    }
+
     ul.innerHTML = state.users.map(u => `<li>
         <div style="display:flex; flex-direction:column;">
-            <span>${u.username}</span>
-            <small style="color:var(--text-muted); font-size:0.75rem; text-transform:uppercase;">Rol: ${u.role || 'admin'}</small>
+            <div style="font-weight:600">${u.username}</div>
+            <small style="color:var(--text-muted); font-size:0.75rem;">
+                Rol: <strong style="color:var(--text-main);">${u.role || 'admin'}</strong>
+                ${u.role === 'vendedor' && u.store_name ? ` · 🏬 ${u.store_name}` : ''}
+            </small>
         </div>
-        ${u.username !== 'admin' ? `<div><button class="btn-icon text-primary" onclick="editUser(${u.id}, '${u.username}')" title="Editar Nombre"><i class="fas fa-edit"></i></button><button class="btn-icon text-danger" onclick="deleteUser(${u.id})" title="Eliminar"><i class="fas fa-trash"></i></button></div>` : '<span class="badge badge-success">Admin Maestro</span>'}
+        ${u.username !== 'admin' ? `<div><button class="btn-icon text-primary" onclick="editUser(${u.id}, '${u.username}', '${u.role || 'admin'}', ${u.store_id || 'null'})" title="Editar Usuario"><i class="fas fa-edit"></i></button><button class="btn-icon text-danger" onclick="deleteUser(${u.id})" title="Eliminar"><i class="fas fa-trash"></i></button></div>` : '<span class="badge badge-success">Admin Maestro</span>'}
     </li>`).join('');
 }
-async function editUser(id, currentUsername) {
+
+async function editUser(id, currentUsername, currentRoleVal, currentStoreVal) {
     const newName = prompt('Ingrese el nuevo nombre de usuario:', currentUsername);
-    if (!newName || newName.trim() === '' || newName === currentUsername) return;
+    if (!newName || newName.trim() === '') return;
+
+    let newRole = currentRoleVal;
+    let newStore = currentStoreVal;
+
+    if (confirm(`¿Configurar como Vendedor con sucursal específica? (Aceptar = Vendedor, Cancelar = Administrador)`)) {
+        newRole = 'vendedor';
+        const storeOptions = state.stores.map(s => `${s.id}: ${s.name}`).join('\n');
+        const storeStr = prompt(`Ingrese el ID de la sucursal asignada:\n${storeOptions}`, currentStoreVal || (state.stores[0]?.id || '1'));
+        if (storeStr) newStore = parseInt(storeStr);
+    } else {
+        newRole = 'admin';
+        newStore = null;
+    }
+
     try {
-        const res = await fetchAuth(`${API_URL}/users/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: newName.trim() }) });
+        const res = await fetchAuth(`${API_URL}/users/${id}`, { 
+            method: 'PUT', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ username: newName.trim(), role: newRole, store_id: newStore }) 
+        });
         if (!res.ok) throw new Error((await res.json()).error);
-        fetchUsers(); showToast('Nombre de usuario actualizado');
+        fetchUsers(); showToast('Usuario actualizado exitosamente');
     } catch (err) { showToast(err.message, true); }
 }
+
 async function addUser(e) {
     e.preventDefault();
     try {
         const payload = { 
             username: document.getElementById('newUsername').value, 
             password: document.getElementById('newUserPassword').value,
-            role: document.getElementById('newUserRole').value 
+            role: document.getElementById('newUserRole').value,
+            store_id: document.getElementById('newUserStore').value || null
         };
+        if (payload.role === 'vendedor' && !payload.store_id) {
+            showToast('Debe seleccionar una sucursal para el Vendedor', true);
+            return false;
+        }
         const res = await fetchAuth(`${API_URL}/users`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         if (!res.ok) throw new Error((await res.json()).error);
         fetchUsers(); showToast('Usuario Creado'); e.target.reset();
+        toggleUserStoreField();
     } catch (err) { showToast(err.message, true); }
     return false;
 }
