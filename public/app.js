@@ -1,5 +1,6 @@
 let API_URL = '';
 let currentUser = localStorage.getItem('slc_user') || '';
+let currentRole = localStorage.getItem('slc_role') || 'admin';
 let state = {
     stores: [], brands: [], models: [], phones: [], transfers: [], sales: [], liquidations: [], liquidationsHistory: [], users: [],
     auditPhones: [], auditResults: {}, revisionPhones: [], auditHistory: [],
@@ -36,11 +37,43 @@ function toggleSidebar() {
 
 function getAuthToken() { return localStorage.getItem('slc_token'); }
 function toggleAdminFeatures() {
-    if (currentUser === 'admin') {
-        document.getElementById('nav-users').style.display = 'flex';
-    } else {
-        document.getElementById('nav-users').style.display = 'none';
-        if (document.getElementById('users-tab') && document.getElementById('users-tab').classList.contains('active')) switchTab('inventory-tab');
+    applyRolePermissions();
+}
+
+function applyRolePermissions() {
+    const isAdmin = currentRole === 'admin';
+    
+    // Tabs que el vendedor NO puede ver
+    const adminOnlyTabs = [
+        'liquidations-tab', 'liquidations-history-tab', 
+        'audit-tab', 'audit-history-tab', 'bulk-tab',
+        'promotions-tab', 'revision-tab', 'config-tab'
+    ];
+    
+    // Ocultar items de navegación del sidebar
+    const navItems = document.querySelectorAll('.nav li');
+    if(navItems.length > 0) {
+        // Índices: 0=Equipos, 1=Ventas, 2=Garantías, 3=Liquidaciones, 4=Hist.Liq, 
+        // 5=Traslados, 6=Auditoría, 7=Hist.Aud, 8=Masivo, 
+        // 9=Promociones, 10=Revisión, 11=Config, 12=Usuarios
+        const adminOnlyIndexes = [3, 4, 6, 7, 8, 9, 10, 11];
+        navItems.forEach((li, index) => {
+            if (!isAdmin && adminOnlyIndexes.includes(index)) {
+                li.style.display = 'none';
+            } else {
+                li.style.display = 'flex';
+            }
+        });
+    }
+
+    const navUsers = document.getElementById('nav-users');
+    if (navUsers) navUsers.style.display = isAdmin ? 'flex' : 'none';
+    
+    // Ocultar botones de acción destructiva en tablas para vendedores
+    if (!isAdmin) {
+        document.querySelectorAll('#inventory-tab header .btn-primary').forEach(b => {
+            if (b.textContent.includes('Añadir')) b.style.display = 'none';
+        });
     }
 }
 async function checkAuthAndInit() {
@@ -53,12 +86,12 @@ async function handleLogin(e) {
         const res = await fetch(`${API_URL}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: document.getElementById('loginUsername').value, password: document.getElementById('loginPassword').value }) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
-        localStorage.setItem('slc_token', data.token); localStorage.setItem('slc_user', data.username); currentUser = data.username;
+        localStorage.setItem('slc_token', data.token); localStorage.setItem('slc_user', data.username); localStorage.setItem('slc_role', data.role); currentUser = data.username; currentRole = data.role;
         document.getElementById('loginOverlay').classList.add('hidden'); showToast('Bienvenido');
         toggleAdminFeatures(); fetchAllData(); document.getElementById('loginPassword').value = '';
     } catch (err) { showToast(err.message, true); }
 }
-function logout() { localStorage.removeItem('slc_token'); localStorage.removeItem('slc_user'); currentUser = ''; document.getElementById('loginOverlay').classList.remove('hidden'); }
+function logout() { localStorage.removeItem('slc_token'); localStorage.removeItem('slc_user'); localStorage.removeItem('slc_role'); currentUser = ''; currentRole = 'admin'; document.getElementById('loginOverlay').classList.remove('hidden'); }
 
 async function fetchAuth(url, options = {}) {
     if (!options.headers) options.headers = {};
@@ -78,15 +111,16 @@ function switchTab(tabId) {
     const navItems = document.querySelectorAll('.nav li');
     if (tabId === 'inventory-tab') navItems[0].classList.add('active');
     if (tabId === 'sales-tab') navItems[1].classList.add('active');
-    if (tabId === 'liquidations-tab') navItems[2].classList.add('active');
-    if (tabId === 'liquidations-history-tab') navItems[3].classList.add('active');
-    if (tabId === 'transfers-tab') navItems[4].classList.add('active');
-    if (tabId === 'audit-tab') navItems[5].classList.add('active');
-    if (tabId === 'audit-history-tab') navItems[6].classList.add('active');
-    if (tabId === 'bulk-tab') navItems[7].classList.add('active');
-    if (tabId === 'promotions-tab') navItems[8].classList.add('active');
-    if (tabId === 'revision-tab') navItems[9].classList.add('active');
-    if (tabId === 'config-tab') navItems[10].classList.add('active');
+    if (tabId === 'warranties-tab') navItems[2].classList.add('active');
+    if (tabId === 'liquidations-tab') navItems[3].classList.add('active');
+    if (tabId === 'liquidations-history-tab') navItems[4].classList.add('active');
+    if (tabId === 'transfers-tab') navItems[5].classList.add('active');
+    if (tabId === 'audit-tab') navItems[6].classList.add('active');
+    if (tabId === 'audit-history-tab') navItems[7].classList.add('active');
+    if (tabId === 'bulk-tab') navItems[8].classList.add('active');
+    if (tabId === 'promotions-tab') navItems[9].classList.add('active');
+    if (tabId === 'revision-tab') navItems[10].classList.add('active');
+    if (tabId === 'config-tab') navItems[11].classList.add('active');
     if (tabId === 'users-tab') {
         const usersNav = document.getElementById('nav-users');
         if (usersNav) usersNav.classList.add('active');
@@ -95,6 +129,7 @@ function switchTab(tabId) {
     if (window.innerWidth <= 820) toggleSidebar();
     if (tabId === 'transfers-tab') { applyTransferFilters(); document.getElementById('transfersImeiSearch').focus(); }
     else if (tabId === 'sales-tab') { fetchSales(); document.getElementById('salesImeiSearch').focus(); }
+    else if (tabId === 'warranties-tab') { fetchWarranties(); document.getElementById('warrantiesSearch').focus(); }
     else if (tabId === 'liquidations-tab') { fetchLiquidations(); document.getElementById('liquidationsImeiSearch').focus(); }
     else if (tabId === 'bulk-tab') { document.getElementById('bulkImeiList').focus(); }
     else if (tabId === 'promotions-tab') { fetchConfig(); renderPromotions(); }
@@ -163,7 +198,14 @@ async function fetchTransfers(filters = {}) {
         renderTransfersTable();
     } catch (e) { console.error(e); }
 }
-async function fetchSales() { try { const res = await fetchAuth(`${API_URL}/sales`); state.sales = await res.json(); renderSalesTable(); } catch (e) { console.error(e); } }
+async function fetchSales() { 
+    try { 
+        const url = currentRole === 'vendedor' ? `${API_URL}/sales/mine` : `${API_URL}/sales`;
+        const res = await fetchAuth(url); 
+        state.sales = await res.json(); 
+        renderSalesTable(); 
+    } catch (e) { console.error(e); } 
+}
 async function fetchLiquidations() { try { const res = await fetchAuth(`${API_URL}/liquidations`); state.liquidations = await res.json(); renderLiquidationsTable(); } catch (e) { console.error(e); } }
 async function fetchUsers() { try { const res = await fetchAuth(`${API_URL}/users`); state.users = await res.json(); renderUsers(); } catch (e) { console.error(e); } }
 
@@ -1190,7 +1232,13 @@ async function genericPost(type, payload) {
 function renderUsers() {
     const ul = document.getElementById('usersList');
     if (!ul) return;
-    ul.innerHTML = state.users.map(u => `<li>${u.username} ${u.username !== 'admin' ? `<div><button class="btn-icon text-primary" onclick="editUser(${u.id}, '${u.username}')" title="Editar Nombre"><i class="fas fa-edit"></i></button><button class="btn-icon text-danger" onclick="deleteUser(${u.id})" title="Eliminar"><i class="fas fa-trash"></i></button></div>` : '<span class="badge badge-success">Admin</span>'}</li>`).join('');
+    ul.innerHTML = state.users.map(u => `<li>
+        <div style="display:flex; flex-direction:column;">
+            <span>${u.username}</span>
+            <small style="color:var(--text-muted); font-size:0.75rem; text-transform:uppercase;">Rol: ${u.role || 'admin'}</small>
+        </div>
+        ${u.username !== 'admin' ? `<div><button class="btn-icon text-primary" onclick="editUser(${u.id}, '${u.username}')" title="Editar Nombre"><i class="fas fa-edit"></i></button><button class="btn-icon text-danger" onclick="deleteUser(${u.id})" title="Eliminar"><i class="fas fa-trash"></i></button></div>` : '<span class="badge badge-success">Admin Maestro</span>'}
+    </li>`).join('');
 }
 async function editUser(id, currentUsername) {
     const newName = prompt('Ingrese el nuevo nombre de usuario:', currentUsername);
@@ -1204,7 +1252,11 @@ async function editUser(id, currentUsername) {
 async function addUser(e) {
     e.preventDefault();
     try {
-        const payload = { username: document.getElementById('newUsername').value, password: document.getElementById('newUserPassword').value };
+        const payload = { 
+            username: document.getElementById('newUsername').value, 
+            password: document.getElementById('newUserPassword').value,
+            role: document.getElementById('newUserRole').value 
+        };
         const res = await fetchAuth(`${API_URL}/users`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         if (!res.ok) throw new Error((await res.json()).error);
         fetchUsers(); showToast('Usuario Creado'); e.target.reset();
@@ -2276,4 +2328,115 @@ function generateAuditPDF(data, storeName, responsibleName, items) {
     const doc = printFrame.contentWindow.document;
     doc.open(); doc.write(htmlContent); doc.close();
     setTimeout(() => { printFrame.contentWindow.focus(); printFrame.contentWindow.print(); }, 700);
+}
+
+// ==========================================
+// WARRANTIES MODULE
+// ==========================================
+async function fetchWarranties() {
+    try {
+        const res = await fetchAuth(`${API_URL}/warranties`);
+        state.warranties = await res.json();
+        renderWarrantiesTable();
+    } catch(err) { console.error(err); }
+}
+
+function renderWarrantiesTable() {
+    const tbody = document.querySelector('#warrantiesTable tbody');
+    if (!tbody) return;
+    const q = document.getElementById('warrantiesSearch')?.value.toLowerCase() || '';
+    
+    let filtered = state.warranties || [];
+    if (q) {
+        filtered = filtered.filter(w => 
+            (w.imei && w.imei.toLowerCase().includes(q)) ||
+            (w.client_name && w.client_name.toLowerCase().includes(q)) ||
+            (w.model_name && w.model_name.toLowerCase().includes(q))
+        );
+    }
+    
+    tbody.innerHTML = filtered.map(w => `
+        <tr>
+            <td data-label="Fecha">${formatDate(w.created_at)}</td>
+            <td data-label="Cliente">
+                <div style="font-weight:600">${w.client_name || 'N/A'}</div>
+                <small style="color:var(--text-muted)">${w.client_phone || ''}</small>
+            </td>
+            <td data-label="Equipo">
+                <div style="font-weight:600">${w.brand_name} ${w.model_name}</div>
+                <small style="font-family:monospace">${w.imei}</small>
+            </td>
+            <td data-label="Tienda"><span class="badge badge-primary">${w.store_name}</span></td>
+            <td data-label="Documentos">
+                ${w.receipt_thumb ? `<img src="${w.receipt_thumb}" class="doc-thumb" onclick="viewImage('${w.receipt_path}')" title="Comprobante" loading="lazy">` : '<span class="badge badge-warning">Sin Comp.</span>'}
+                ${w.warranty_thumb ? `<img src="${w.warranty_thumb}" class="doc-thumb" onclick="viewImage('${w.warranty_path}')" title="Garantía" loading="lazy">` : '<span class="badge badge-warning">Sin Gar.</span>'}
+            </td>
+            <td data-label="Acciones" class="text-right">
+                <button class="btn btn-secondary" onclick="openWarrantyModal(${w.sale_id})"><i class="fas fa-upload"></i> Subir / Editar</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function openWarrantyModal(saleId) {
+    document.getElementById('warrantyForm').reset();
+    document.getElementById('warrantySaleId').value = saleId;
+    
+    // Si ya hay datos, cargarlos
+    const w = (state.warranties || []).find(x => x.sale_id === saleId);
+    if(w) {
+        document.getElementById('warrantyClientName').value = w.client_name || '';
+        document.getElementById('warrantyClientPhone').value = w.client_phone || '';
+        document.getElementById('warrantyDate').value = w.warranty_date || '';
+        document.getElementById('warrantyObservations').value = w.observations || '';
+    }
+    
+    openModal('warrantyModal');
+}
+
+async function saveWarranty(e) {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo...';
+    btn.disabled = true;
+
+    try {
+        const formData = new FormData();
+        const saleId = document.getElementById('warrantySaleId').value;
+        formData.append('client_name', document.getElementById('warrantyClientName').value);
+        formData.append('client_phone', document.getElementById('warrantyClientPhone').value);
+        formData.append('warranty_date', document.getElementById('warrantyDate').value);
+        formData.append('observations', document.getElementById('warrantyObservations').value);
+
+        const receiptFile = document.getElementById('warrantyReceipt').files[0];
+        const warrantyFile = document.getElementById('warrantyDoc').files[0];
+        
+        if(receiptFile) formData.append('receipt', receiptFile);
+        if(warrantyFile) formData.append('warranty', warrantyFile);
+
+        const res = await fetchAuth(`${API_URL}/warranties/${saleId}`, {
+            method: 'POST',
+            // headers: no enviamos Content-Type para que el browser ponga el boundary de multipart/form-data
+            body: formData
+        });
+
+        if (!res.ok) throw new Error((await res.json()).error);
+        
+        showToast('Garantía guardada correctamente');
+        closeModal('warrantyModal');
+        fetchWarranties();
+    } catch(err) {
+        showToast(err.message, true);
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+function viewImage(url) {
+    if(!url) return;
+    const img = document.getElementById('lightboxImage');
+    img.src = url;
+    openModal('lightboxModal');
 }

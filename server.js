@@ -8,10 +8,56 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
+const multer = require('multer');
+const sharp = require('sharp');
+
+// Almacenamiento temporal en memoria para procesamiento con Sharp
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+    fileFilter: (req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
+        if (allowed.includes(file.mimetype)) cb(null, true);
+        else cb(new Error('Tipo de archivo no permitido. Solo imágenes.'));
+    }
+});
+
+const UPLOADS_DIR = process.env.UPLOADS_PATH || path.join(__dirname, 'uploads');
+['comprobantes', 'garantias', 'thumbnails'].forEach(dir => {
+    const fullPath = path.join(UPLOADS_DIR, dir);
+    if (!fs.existsSync(fullPath)) fs.mkdirSync(fullPath, { recursive: true });
+});
+
+async function processImage(buffer, subdir, filename) {
+    const fullDir = path.join(UPLOADS_DIR, subdir);
+    const thumbDir = path.join(UPLOADS_DIR, 'thumbnails');
+
+    const fullPath = path.join(fullDir, filename);
+    const thumbPath = path.join(thumbDir, filename);
+
+    // Versión optimizada (max 1200px, WebP 75%)
+    await sharp(buffer)
+        .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 75 })
+        .toFile(fullPath);
+
+    // Thumbnail (300px, WebP 60%)
+    await sharp(buffer)
+        .resize(300, 300, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 60 })
+        .toFile(thumbPath);
+
+    return {
+        path: `/uploads/${subdir}/${filename}`,
+        thumb: `/uploads/thumbnails/${filename}`
+    };
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
+app.use('/uploads', express.static(UPLOADS_DIR));
 app.get('/admin', (req, res) => res.redirect('/'));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'slc_pro_secret_2026';
@@ -23,6 +69,12 @@ if (!fs.existsSync(dbDir)) {
 }
 console.log(`✅ Database target: ${dbPath}`);
 const db = new Database(dbPath);
+
+// Optimizaciones SQLite
+db.exec('PRAGMA journal_mode=WAL;');
+db.exec('PRAGMA synchronous=NORMAL;');
+db.exec('PRAGMA cache_size=10000;');
+db.exec('PRAGMA temp_store=MEMORY;');
 
 // ==========================================
 // TIME ENDPOINT (NO AUTH)
@@ -143,6 +195,22 @@ function initDB() {
             FOREIGN KEY(audit_id) REFERENCES audits(id),
             FOREIGN KEY(phone_id) REFERENCES phones(id)
         );
+        CREATE TABLE IF NOT EXISTS warranties (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sale_id INTEGER NOT NULL UNIQUE,
+            client_name TEXT,
+            client_phone TEXT,
+            warranty_date TEXT,
+            observations TEXT,
+            receipt_path TEXT,
+            receipt_thumb TEXT,
+            warranty_path TEXT,
+            warranty_thumb TEXT,
+            created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+            created_by INTEGER,
+            FOREIGN KEY(sale_id) REFERENCES sales(id),
+            FOREIGN KEY(created_by) REFERENCES users(id)
+        );
     `);
 
     // === SAFE MIGRATION: Audits table ===
@@ -161,9 +229,25 @@ function initDB() {
     try { db.exec('ALTER TABLE sales ADD COLUMN final_price_type TEXT DEFAULT "Contado"'); } catch(e) { /* exists */ }
     try { db.exec('ALTER TABLE sales ADD COLUMN cost_price REAL DEFAULT 0'); } catch(e) { /* exists */ }
 
+    // === SAFE MIGRATION: User roles ===
+    try { db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'"); } catch(e) { /* exists */ }
+    
+    // === SAFE MIGRATION: Sales sold_by ===
+    try { db.exec('ALTER TABLE sales ADD COLUMN sold_by INTEGER'); } catch(e) { /* exists */ }
+
+    // === PERFORMANCE INDEXES ===
+    db.exec('CREATE INDEX IF NOT EXISTS idx_phones_imei ON phones(imei);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_phones_status ON phones(status);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_phones_store ON phones(store_id);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_sales_phone ON sales(phone_id);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_transfers_phone ON transfers(phone_id);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_audit_items_phone ON audit_items(phone_id);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);');
+
     if (db.prepare('SELECT COUNT(*) as count FROM users').get().count === 0) {
         const hash = bcrypt.hashSync('admin123', 10);
-        db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run('admin', hash);
+        db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)').run('admin', hash, 'admin');
         
         const insertStore = db.prepare('INSERT INTO stores (name) VALUES (?)');
         for(let i=1; i<=7; i++) insertStore.run(`Tienda ${i}`);
@@ -199,8 +283,8 @@ app.post('/api/login', (req, res) => {
         if (!user || !bcrypt.compareSync(password, user.password_hash)) {
             return res.status(401).json({error: "Credenciales inválidas."});
         }
-        const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
-        res.json({ token, username: user.username });
+        const token = jwt.sign({ id: user.id, username: user.username, role: user.role || 'admin' }, JWT_SECRET, { expiresIn: '24h' });
+        res.json({ token, username: user.username, role: user.role || 'admin' });
     } catch(err) { res.status(500).json({error: err.message}); }
 });
 
@@ -215,44 +299,45 @@ const authenticateToken = (req, res, next) => {
         next();
     });
 };
+
+const requireAdmin = (req, res, next) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: "Acceso restringido. Se requieren privilegios de administrador." });
+    }
+    next();
+};
+
 app.use('/api', authenticateToken);
 
 // ==========================================
 // USERS & SECURITY
 // ==========================================
-app.get('/api/users', (req, res) => {
+app.get('/api/users', requireAdmin, (req, res) => {
     try {
-        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
-        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo el administrador puede ver usuarios."});
-        res.json(db.prepare('SELECT id, username FROM users').all());
+        res.json(db.prepare('SELECT id, username, role FROM users').all());
     } catch(err) { res.status(500).json({error: err.message}); }
 });
 
-app.post('/api/users', (req, res) => {
+app.post('/api/users', requireAdmin, (req, res) => {
     try {
-        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
-        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo administrador."});
-        const { username, password } = req.body;
+        const { username, password, role } = req.body;
+        const userRole = (role === 'vendedor') ? 'vendedor' : 'admin';
         const hash = bcrypt.hashSync(password, 10);
-        const info = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(username, hash);
+        const info = db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)').run(username, hash, userRole);
         res.json({ id: info.lastInsertRowid, success: true });
     } catch(err) { res.status(400).json({error: err.message}); }
 });
 
-app.delete('/api/users/:id', (req, res) => {
+app.delete('/api/users/:id', requireAdmin, (req, res) => {
     try {
-        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
-        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo administrador."});
         if(req.params.id == req.user.id) return res.status(400).json({error: "No puedes eliminarte a ti mismo."});
         db.prepare('DELETE FROM users WHERE id=?').run(req.params.id);
         res.json({ success: true });
     } catch(err) { res.status(400).json({error: err.message}); }
 });
 
-app.put('/api/users/:id', (req, res) => {
+app.put('/api/users/:id', requireAdmin, (req, res) => {
     try {
-        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
-        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo administrador."});
         const { username } = req.body;
         if (!username || username.trim() === '') return res.status(400).json({error: "Nombre de usuario inválido."});
         db.prepare('UPDATE users SET username=? WHERE id=?').run(username.trim(), req.params.id);
@@ -278,12 +363,12 @@ app.put('/api/users/password', (req, res) => {
 // CONFIG: STORES & BRANDS
 // ==========================================
 app.get('/api/stores', (req, res) => { try { res.json(db.prepare('SELECT * FROM stores ORDER BY name').all()); } catch(err) { res.status(500).json({error: err.message}); } });
-app.post('/api/stores', (req, res) => { try { const info = db.prepare('INSERT INTO stores (name) VALUES (?)').run(req.body.name); res.json({ id: info.lastInsertRowid, success: true }); } catch(err) { res.status(400).json({error: err.message}); } });
-app.delete('/api/stores/:id', (req, res) => { try { db.prepare('DELETE FROM stores WHERE id=?').run(req.params.id); res.json({ success: true }); } catch(err) { res.status(400).json({error: "No se puede eliminar la sucursal si tiene historial."}); } });
+app.post('/api/stores', requireAdmin, (req, res) => { try { const info = db.prepare('INSERT INTO stores (name) VALUES (?)').run(req.body.name); res.json({ id: info.lastInsertRowid, success: true }); } catch(err) { res.status(400).json({error: err.message}); } });
+app.delete('/api/stores/:id', requireAdmin, (req, res) => { try { db.prepare('DELETE FROM stores WHERE id=?').run(req.params.id); res.json({ success: true }); } catch(err) { res.status(400).json({error: "No se puede eliminar la sucursal si tiene historial."}); } });
 
 app.get('/api/brands', (req, res) => { try { res.json(db.prepare('SELECT * FROM brands ORDER BY name').all()); } catch(err) { res.status(500).json({error: err.message}); } });
-app.post('/api/brands', (req, res) => { try { const info = db.prepare('INSERT INTO brands (name) VALUES (?)').run(req.body.name); res.json({ id: info.lastInsertRowid, success: true }); } catch(err) { res.status(400).json({error: err.message}); } });
-app.delete('/api/brands/:id', (req, res) => { try { db.prepare('DELETE FROM brands WHERE id=?').run(req.params.id); res.json({ success: true }); } catch(err) { res.status(400).json({error: "No se puede porque tiene modelos."}); } });
+app.post('/api/brands', requireAdmin, (req, res) => { try { const info = db.prepare('INSERT INTO brands (name) VALUES (?)').run(req.body.name); res.json({ id: info.lastInsertRowid, success: true }); } catch(err) { res.status(400).json({error: err.message}); } });
+app.delete('/api/brands/:id', requireAdmin, (req, res) => { try { db.prepare('DELETE FROM brands WHERE id=?').run(req.params.id); res.json({ success: true }); } catch(err) { res.status(400).json({error: "No se puede porque tiene modelos."}); } });
 
 // ==========================================
 // MODELS (MASTER CATALOG)
@@ -297,7 +382,7 @@ app.get('/api/models', (req, res) => {
         `).all());
     } catch(err) { res.status(500).json({error: err.message}); }
 });
-app.post('/api/models', (req, res) => {
+app.post('/api/models', requireAdmin, (req, res) => {
     let { name, brand_id, image_url, price_cash, credit_enabled, price_credit, price_wholesale, max_discount, ram, storage, price_cost } = req.body;
     credit_enabled = credit_enabled ? 1 : 0;
     
@@ -316,7 +401,7 @@ app.post('/api/models', (req, res) => {
     }
 });
 
-app.put('/api/models/:id', (req, res) => {
+app.put('/api/models/:id', requireAdmin, (req, res) => {
     let { name, brand_id, image_url, price_cash, credit_enabled, price_credit, price_wholesale, max_discount, offer_price, ram, storage, price_cost } = req.body;
     
     credit_enabled = credit_enabled ? 1 : 0;
@@ -333,14 +418,14 @@ app.put('/api/models/:id', (req, res) => {
     }
 });
 
-app.put('/api/models/:id/offer', (req, res) => {
+app.put('/api/models/:id/offer', requireAdmin, (req, res) => {
     try {
         const { offer_price } = req.body;
         db.prepare('UPDATE phone_models SET offer_price=? WHERE id=?').run(offer_price || null, req.params.id);
         res.json({ success: true });
     } catch(err) { res.status(400).json({error: err.message}); }
 });
-app.delete('/api/models/:id', (req, res) => {
+app.delete('/api/models/:id', requireAdmin, (req, res) => {
     try {
         db.prepare('DELETE FROM phone_models WHERE id=?').run(req.params.id);
         res.json({ success: true });
@@ -388,7 +473,7 @@ app.get('/api/phones', (req, res) => {
 });
 
 // ULTRA FAST MOBILE POST (Just 3 inputs needed from UI)
-app.post('/api/phones', (req, res) => {
+app.post('/api/phones', requireAdmin, (req, res) => {
     let { imei, model_id, store_id } = req.body;
     if (!imei) return res.status(400).json({ error: "El identificador IMEI / S/N es obligatorio." });
     
@@ -414,7 +499,7 @@ app.post('/api/phones', (req, res) => {
 // ===========================
 // BULK INSERT (ULTRA-ROBUST)
 // ===========================
-app.post('/api/phones/bulk', (req, res) => {
+app.post('/api/phones/bulk', requireAdmin, (req, res) => {
     const { model_id, store_id, imeis } = req.body;
     console.log(`[BULK] Inicia carga: Modelo=${model_id}, Store=${store_id}, Total=${imeis?.length}`);
 
@@ -454,7 +539,7 @@ app.post('/api/phones/bulk', (req, res) => {
     }
 });
 
-app.delete('/api/phones/:id', (req, res) => {
+app.delete('/api/phones/:id', requireAdmin, (req, res) => {
     try {
         db.prepare('DELETE FROM transfers WHERE phone_id=?').run(req.params.id);
         db.prepare('DELETE FROM sales WHERE phone_id=?').run(req.params.id);
@@ -516,10 +601,8 @@ app.get('/api/transfers', (req, res) => {
     } catch (err) { res.status(500).json({error: err.message}); }
 });
 
-app.delete('/api/transfers/:id', (req, res) => {
+app.delete('/api/transfers/:id', requireAdmin, (req, res) => {
     try {
-        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
-        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo administrador puede revertir traslados."});
 
         const transfer = db.prepare('SELECT * FROM transfers WHERE id=?').get(req.params.id);
         if(!transfer) return res.status(404).json({error: "Traslado no encontrado."});
@@ -598,9 +681,9 @@ app.post('/api/sales', (req, res) => {
             }
 
             db.prepare("UPDATE phones SET status='Vendido' WHERE id=?").run(phone_id);
-            const stmt = db.prepare(`INSERT INTO sales (phone_id, store_id, sale_type, final_price, prima, saldo, payment_status, client_name, installments, notes, discount, final_price_type, sale_date, cost_price) 
-                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-            stmt.run(phone_id, store_id, sale_type, final_price, actPrima, saldo, payment_status, defaultClient, null, notes || '', actDiscount, actPriceType, finalDate, phone.price_cost || 0);
+            const stmt = db.prepare(`INSERT INTO sales (phone_id, store_id, sale_type, final_price, prima, saldo, payment_status, client_name, installments, notes, discount, final_price_type, sale_date, cost_price, sold_by) 
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            stmt.run(phone_id, store_id, sale_type, final_price, actPrima, saldo, payment_status, defaultClient, null, notes || '', actDiscount, actPriceType, finalDate, phone.price_cost || 0, req.user.id);
         })();
         res.json({ success: true, final_price });
     } catch(err) { res.status(400).json({error: err.message}); }
@@ -618,10 +701,8 @@ app.get('/api/sales', (req, res) => {
     } catch (err) { res.status(500).json({error: err.message}); }
 });
 
-app.delete('/api/sales/:id', (req, res) => {
+app.delete('/api/sales/:id', requireAdmin, (req, res) => {
     try {
-        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
-        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo administrador puede revertir ventas."});
 
         const sale = db.prepare('SELECT * FROM sales WHERE id=?').get(req.params.id);
         if(!sale) return res.status(404).json({error: "Venta no encontrada."});
@@ -670,10 +751,8 @@ app.get('/api/liquidations/history', (req, res) => {
     } catch (err) { res.status(500).json({error: err.message}); }
 });
 
-app.put('/api/liquidations/:id/revert', (req, res) => {
+app.put('/api/liquidations/:id/revert', requireAdmin, (req, res) => {
     try {
-        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
-        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo administrador puede revertir liquidaciones."});
 
         const sale = db.prepare('SELECT * FROM sales WHERE id=?').get(req.params.id);
         if(!sale) return res.status(404).json({error: "Venta no encontrada."});
@@ -729,15 +808,17 @@ app.get(['/api/export-catalog', '/catalogo_existencias.html'], (req, res) => {
 
         const outputHtml = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"><title>Catálogo Virtual - Solucels Control</title>
         <link rel="icon" type="image/x-icon" href="/favicon.ico">
-        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
         <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>:root{--primary:#2563eb;--bg-color:#0b0f19;--card-bg:#161b2c;--text-main:#f8fafc;--text-muted:#94a3b8;--border-color:rgba(255,255,255,0.08);--success:#10b981;--accent:#3b82f6;--danger:#ef4444;}
         *{box-sizing:border-box;margin:0;padding:0;font-family:'Outfit',sans-serif;-webkit-tap-highlight-color:transparent;}
-        body{background-color:var(--bg-color);color:var(--text-main);padding-bottom:env(safe-area-inset-bottom, 3rem);line-height:1.5;overflow-x:hidden;}
+        body{background-color:var(--bg-color);color:var(--text-main);padding-bottom:calc(env(safe-area-inset-bottom, 3rem) + 80px);line-height:1.5;overflow-x:hidden;}
         header{background:rgba(30, 41, 59, 0.8);backdrop-filter:blur(20px);padding:calc(1rem + env(safe-area-inset-top)) 1.5rem 1.5rem;text-align:center;border-bottom:1px solid var(--border-color);position:sticky;top:0;z-index:1000;}
         h1{font-size:1.8rem;font-weight:700;letter-spacing:-0.03em;margin-bottom:0.25rem;color:#fff;}
-        .container{max-width:1400px;margin:0 auto;padding:0 1rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.5rem;}
+        .filters-bar { display: flex; gap: 1rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
+        .filters-bar input, .filters-bar select { padding: 0.75rem 1rem; border-radius: 2rem; border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: #fff; outline: none; }
+        .filters-bar input:focus, .filters-bar select:focus { border-color: var(--accent); }
+        .container{max-width:1400px;margin:2rem auto;padding:0 1rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.5rem;}
         .card{background:var(--card-bg);border-radius:1.5rem;overflow:hidden;border:1px solid var(--border-color);transition:all 0.3s cubic-bezier(0.4, 0, 0.2, 1);display:flex;flex-direction:column;position:relative;box-shadow:0 4px 20px rgba(0,0,0,0.2);}
         .card:hover{transform:translateY(-8px);border-color:var(--accent);box-shadow:0 12px 30px rgba(0,0,0,0.4);}
         .card-img-wrapper{width:100%;height:280px;background:#000;display:flex;align-items:center;justify-content:center;position:relative;padding:1rem;}
@@ -765,23 +846,43 @@ app.get(['/api/export-catalog', '/catalogo_existencias.html'], (req, res) => {
         .store-name{color:var(--text-muted);font-weight:500;}
         .store-count{text-align:right;font-weight:700;color:var(--accent);}
         .empty-count{color:#334155;font-weight:400;}
+        
+        /* Floating WhatsApp Button */
+        .wa-float{position:fixed;width:60px;height:60px;bottom:40px;right:40px;background-color:#25d366;color:#FFF;border-radius:50px;text-align:center;font-size:30px;box-shadow:2px 2px 10px rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;transition:transform 0.3s;}
+        .wa-float:hover{transform:scale(1.1);}
+        
         @media (max-width: 768px){
             h1{font-size:2rem;}
             .container{grid-template-columns:repeat(auto-fill,minmax(260px,1fr));padding:0 0.75rem;}
             .card-img-wrapper{height:220px;}
-        }
-        @media (max-width: 480px){
-            header{padding:3rem 1rem 2rem;}
-            h1{font-size:1.75rem;}
-            .container{grid-template-columns:1fr;}
-            .card-price{font-size:1.5rem;}
+            .wa-float{bottom:20px;right:20px;width:50px;height:50px;font-size:25px;}
         }
         </style></head>
-        <body><header><h1>Catálogo de Modelos Maestro Solucels Control</h1><p style="color:var(--text-muted)">Última actualización: ${lastUpdate}</p></header>
-        <div class="container">
+        <body>
+        <header>
+            <h1>Catálogo Virtual Solucels</h1>
+            <p style="color:var(--text-muted)">Última actualización: ${lastUpdate}</p>
+            <div class="filters-bar">
+                <input type="text" id="searchFilter" placeholder="Buscar modelo..." oninput="filterCatalog()">
+                <select id="brandFilter" onchange="filterCatalog()">
+                    <option value="">Todas las marcas</option>
+                    ${Array.from(new Set(catalogDataArray.map(i=>i.brand))).map(b=>'<option value="' + b + '">' + b + '</option>').join('')}
+                </select>
+                <select id="storeFilter" onchange="filterCatalog()">
+                    <option value="">Todas las tiendas</option>
+                    ${storesNames.map(s=>'<option value="' + s + '">' + s + '</option>').join('')}
+                </select>
+            </div>
+        </header>
+        
+        <div class="container" id="catalogContainer">
             ${catalogDataArray.map(item => `
-            <div class="card">
-                <div class="card-img-wrapper"><span class="total-badge">${item.total} Uni.</span><img src="${item.image_url}" class="card-img" loading="lazy" onerror="this.src='https://via.placeholder.com/400x400?text=Phone'"></div>
+            <div class="card" data-brand="${item.brand}" data-model="${item.model.toLowerCase()}" data-stores='${JSON.stringify(item.stock_por_tienda)}'>
+                <div class="card-img-wrapper">
+                    ${item.offer_price > 0 ? '<span style="position:absolute;top:1rem;left:1rem;background:var(--danger);color:white;padding:0.3rem 0.8rem;border-radius:1rem;font-size:0.8rem;font-weight:bold;z-index:2;">¡OFERTA!</span>' : ''}
+                    <span class="total-badge">${item.total} Uni.</span>
+                    <img src="${item.image_url}" class="card-img" loading="lazy" onerror="this.src='https://via.placeholder.com/400x400?text=Phone'">
+                </div>
                 <div class="card-content">
                     <div class="brand-label">${item.brand}</div>
                     <h2 class="model-name">${item.model}${(item.ram || item.storage) ? ' &mdash; ' + (item.ram || 'N/A') + ' / ' + (item.storage || 'N/A') : ''}</h2>
@@ -795,7 +896,40 @@ app.get(['/api/export-catalog', '/catalogo_existencias.html'], (req, res) => {
                     <table class="stock-table"><tbody>${storesNames.map(s => `<tr><td class="store-name">${s}</td><td class="store-count ${item.stock_por_tienda[s]===0?'empty-count':''}">${item.stock_por_tienda[s]}</td></tr>`).join('')}</tbody></table>
                 </div>
             </div>`).join('')}
-        </div></body></html>`;
+        </div>
+        
+        <!-- Placeholder WhatsApp Button, client will configure the link later -->
+        <a href="https://wa.me/50400000000?text=Hola,%20vengo%20del%20catálogo%20virtual" class="wa-float" target="_blank" title="Contactar por WhatsApp">
+            <i class="fab fa-whatsapp"></i>
+        </a>
+
+        <script>
+            function filterCatalog() {
+                const search = document.getElementById('searchFilter').value.toLowerCase();
+                const brand = document.getElementById('brandFilter').value;
+                const store = document.getElementById('storeFilter').value;
+                
+                const cards = document.querySelectorAll('.card');
+                cards.forEach(card => {
+                    const cardBrand = card.getAttribute('data-brand');
+                    const cardModel = card.getAttribute('data-model');
+                    const cardStoresStr = card.getAttribute('data-stores');
+                    
+                    let match = true;
+                    if(search && !cardModel.includes(search) && !cardBrand.toLowerCase().includes(search)) match = false;
+                    if(brand && cardBrand !== brand) match = false;
+                    if(store) {
+                        try {
+                            const stores = JSON.parse(cardStoresStr);
+                            if(!stores[store] || stores[store] <= 0) match = false;
+                        } catch(e) {}
+                    }
+                    
+                    card.style.display = match ? 'flex' : 'none';
+                });
+            }
+        </script>
+        </body></html>`;
 
         res.set({
             'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
@@ -826,7 +960,7 @@ app.get('/api/phones/audit', (req, res) => {
     } catch(err) { res.status(500).json({error: err.message}); }
 });
 
-app.post('/api/audits', (req, res) => {
+app.post('/api/audits', requireAdmin, (req, res) => {
     const { store_id, items, responsible_name } = req.body;
     if (!store_id || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: "Datos de auditoría inválidos." });
@@ -906,10 +1040,8 @@ app.get('/api/audits/:id', (req, res) => {
     } catch(err) { res.status(500).json({error: err.message}); }
 });
 
-app.get('/api/phones/en-revision', (req, res) => {
+app.get('/api/phones/en-revision', requireAdmin, (req, res) => {
     try {
-        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
-        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo administrador."});
         
         const rows = db.prepare(`
             SELECT p.*, m.name as model_name, b.name as brand_name, s.name as store_name
@@ -924,18 +1056,115 @@ app.get('/api/phones/en-revision', (req, res) => {
     } catch(err) { res.status(500).json({error: err.message}); }
 });
 
-app.put('/api/phones/:id/resolver', (req, res) => {
+app.put('/api/phones/:id/resolver', requireAdmin, (req, res) => {
     try {
-        const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
-        if(!u || u.username !== 'admin') return res.status(403).json({error: "Solo administrador."});
         
         db.prepare("UPDATE phones SET status='Disponible' WHERE id=?").run(req.params.id);
         res.json({ success: true });
     } catch(err) { res.status(500).json({error: err.message}); }
 });
 
+app.get('/api/sales/mine', (req, res) => {
+    try {
+        res.json(db.prepare(`
+            SELECT sl.*, p.imei, m.name as model_name, m.ram, m.storage, s.name as store_name, b.name as brand_name, s.id as store_id, m.brand_id
+            FROM sales sl JOIN phones p ON sl.phone_id = p.id
+            JOIN phone_models m ON p.model_id = m.id JOIN stores s ON sl.store_id = s.id
+            JOIN brands b ON m.brand_id = b.id
+            WHERE sl.sold_by = ?
+            ORDER BY sl.sale_date DESC LIMIT 200
+        `).all(req.user.id));
+    } catch (err) { res.status(500).json({error: err.message}); }
+});
+
+// ==========================================
+// WARRANTIES
+// ==========================================
+app.post('/api/warranties/:saleId', 
+    upload.fields([
+        { name: 'receipt', maxCount: 1 },
+        { name: 'warranty', maxCount: 1 }
+    ]),
+    async (req, res) => {
+        const { saleId } = req.params;
+        const { client_name, client_phone, warranty_date, observations } = req.body;
+
+        try {
+            const sale = db.prepare('SELECT id FROM sales WHERE id=?').get(saleId);
+            if (!sale) return res.status(404).json({ error: "Venta no encontrada." });
+
+            let receiptPaths = { path: null, thumb: null };
+            let warrantyPaths = { path: null, thumb: null };
+            const ts = Date.now();
+
+            if (req.files && req.files.receipt) {
+                receiptPaths = await processImage(
+                    req.files.receipt[0].buffer, 'comprobantes', `comp_${saleId}_${ts}.webp`
+                );
+            }
+            if (req.files && req.files.warranty) {
+                warrantyPaths = await processImage(
+                    req.files.warranty[0].buffer, 'garantias', `gar_${saleId}_${ts}.webp`
+                );
+            }
+
+            const existing = db.prepare('SELECT id FROM warranties WHERE sale_id=?').get(saleId);
+            if (existing) {
+                db.prepare(`UPDATE warranties SET client_name=?, client_phone=?, 
+                    warranty_date=?, observations=?,
+                    receipt_path=COALESCE(?,receipt_path), receipt_thumb=COALESCE(?,receipt_thumb),
+                    warranty_path=COALESCE(?,warranty_path), warranty_thumb=COALESCE(?,warranty_thumb)
+                    WHERE sale_id=?`).run(
+                    client_name, client_phone, warranty_date, observations,
+                    receiptPaths.path, receiptPaths.thumb,
+                    warrantyPaths.path, warrantyPaths.thumb, saleId
+                );
+            } else {
+                db.prepare(`INSERT INTO warranties (sale_id, client_name, client_phone, 
+                    warranty_date, observations, receipt_path, receipt_thumb, 
+                    warranty_path, warranty_thumb, created_by)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
+                    saleId, client_name, client_phone, warranty_date, observations,
+                    receiptPaths.path, receiptPaths.thumb,
+                    warrantyPaths.path, warrantyPaths.thumb, req.user.id
+                );
+            }
+            res.json({ success: true });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    }
+);
+
+app.get('/api/warranties/:saleId', (req, res) => {
+    try {
+        const w = db.prepare('SELECT * FROM warranties WHERE sale_id=?').get(req.params.saleId);
+        res.json(w || null);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/warranties', (req, res) => {
+    try {
+        let sql = `SELECT w.*, s.sale_date, p.imei, m.name as model_name, 
+                   b.name as brand_name, st.name as store_name
+                   FROM warranties w
+                   JOIN sales s ON w.sale_id = s.id
+                   JOIN phones p ON s.phone_id = p.id
+                   JOIN phone_models m ON p.model_id = m.id
+                   JOIN brands b ON m.brand_id = b.id
+                   JOIN stores st ON s.store_id = st.id`;
+        
+        if (req.user.role === 'vendedor') {
+            sql += ` WHERE w.created_by = ?`;
+            const rows = db.prepare(sql + ' ORDER BY w.created_at DESC LIMIT 200').all(req.user.id);
+            return res.json(rows);
+        }
+        
+        res.json(db.prepare(sql + ' ORDER BY w.created_at DESC LIMIT 500').all());
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log('Servidor Solucels listo en puerto 3000');
 });
-

@@ -46,6 +46,7 @@
         <ul class="nav">
             <li class="active" onclick="switchTab('inventory-tab')"><i class="fas fa-mobile-alt"></i> Equipos</li>
             <li onclick="switchTab('sales-tab')"><i class="fas fa-shopping-cart"></i> Ventas</li>
+            <li id="nav-warranties" onclick="switchTab('warranties-tab')"><i class="fas fa-file-signature"></i> Garantías</li>
             <li onclick="switchTab('liquidations-tab')"><i class="fas fa-hand-holding-usd"></i> Liquidaciones</li>
             <li onclick="switchTab('liquidations-history-tab')"><i class="fas fa-history"></i> Hist. Liquidaciones</li>
             <li onclick="switchTab('transfers-tab')"><i class="fas fa-exchange-alt"></i> Traslados</li>
@@ -663,6 +664,40 @@
             </div>
         </div>
 
+        <!-- WARRANTIES TAB -->
+        <div id="warranties-tab" class="tab-content">
+            <header>
+                <div>
+                    <h1>Gestión de Garantías</h1>
+                    <p class="subtitle">Comprobantes y garantías firmadas</p>
+                </div>
+            </header>
+            
+            <div class="search-box-premium" style="margin-top: 1rem;">
+                <div class="search-input-wrapper">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="warrantiesSearch" placeholder="Buscar por IMEI, cliente o modelo..."
+                        onkeyup="renderWarrantiesTable()">
+                </div>
+            </div>
+
+            <div class="table-container mt-3">
+                <table id="warrantiesTable">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Cliente</th>
+                            <th>Equipo (IMEI)</th>
+                            <th>Tienda</th>
+                            <th>Documentos</th>
+                            <th class="text-right">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- 6. USERS -->
         <div id="users-tab" class="tab-content">
             <header>
@@ -678,6 +713,13 @@
                                 required></div>
                         <div class="form-group"><input type="password" id="newUserPassword"
                                 placeholder="Contraseña de acceso" required></div>
+                        <div class="form-group">
+                            <label><i class="fas fa-user-shield"></i> Rol de Acceso</label>
+                            <select id="newUserRole" required>
+                                <option value="admin">Administrador (Acceso total)</option>
+                                <option value="vendedor">Vendedor (Acceso limitado)</option>
+                            </select>
+                        </div>
                         <button type="submit" class="btn btn-secondary w-100"><i class="fas fa-plus"></i> Crear
                             Usuario</button>
                     </form>
@@ -914,6 +956,62 @@
                         style="background:var(--success); font-size:1.1rem; padding: 1rem;"><i class="fas fa-check"></i>
                         Emitir Factura Cerrada</button></div>
             </form>
+        </div>
+    </div>
+
+    <!-- WARRANTY MODAL -->
+    <div id="warrantyModal" class="modal-overlay">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h2>Registrar Garantía / Comprobante</h2>
+                <button class="close-btn" onclick="closeModal('warrantyModal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="warrantyForm" onsubmit="return saveWarranty(event)">
+                <input type="hidden" id="warrantySaleId">
+                <div class="row">
+                    <div class="form-group col">
+                        <label>Nombre del Cliente</label>
+                        <input type="text" id="warrantyClientName" placeholder="Nombre completo">
+                    </div>
+                    <div class="form-group col">
+                        <label>Teléfono del Cliente</label>
+                        <input type="tel" id="warrantyClientPhone" placeholder="9999-9999">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Fecha de Garantía</label>
+                    <input type="date" id="warrantyDate" class="input-date-premium">
+                </div>
+                <div class="row">
+                    <div class="form-group col">
+                        <label><i class="fas fa-receipt"></i> Foto del Comprobante</label>
+                        <input type="file" id="warrantyReceipt" accept="image/*" capture="environment">
+                    </div>
+                    <div class="form-group col">
+                        <label><i class="fas fa-file-signature"></i> Foto de Garantía Firmada</label>
+                        <input type="file" id="warrantyDoc" accept="image/*" capture="environment">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Observaciones</label>
+                    <input type="text" id="warrantyObservations" placeholder="Notas adicionales...">
+                </div>
+                <div class="modal-actions">
+                    <button type="submit" class="btn btn-primary w-100-mobile" 
+                        style="background:var(--success)">
+                        <i class="fas fa-save"></i> Guardar Garantía
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- LIGHTBOX MODAL -->
+    <div id="lightboxModal" class="modal-overlay" style="z-index: 3000; background: rgba(0,0,0,0.95);" onclick="closeModal('lightboxModal')">
+        <div class="modal" style="background: transparent; border: none; box-shadow: none; display: flex; align-items: center; justify-content: center; height: 100vh; padding: 0;">
+            <img id="lightboxImage" src="" style="max-width: 95vw; max-height: 90vh; object-fit: contain; border-radius: 10px;">
         </div>
     </div>
 

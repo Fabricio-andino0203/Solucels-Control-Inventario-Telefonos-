@@ -484,3 +484,24 @@ option:hover, option:focus, option:active, option:checked {
 .audit-header .title-area p {
     color: var(--text-muted);
 }
+
+/* =========================================================
+   WARRANTIES STYLES
+   ========================================================= */
+.doc-thumb {
+    width: 50px;
+    height: 50px;
+    object-fit: cover;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid var(--border-color);
+    margin-right: 5px;
+    transition: transform 0.2s;
+    background: #000;
+}
+.doc-thumb:hover {
+    transform: scale(1.2);
+    border-color: var(--accent);
+    z-index: 10;
+    position: relative;
+}
