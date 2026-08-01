@@ -135,7 +135,7 @@ async function fetchAuth(url, options = {}) {
 }
 
 // FETCH DATA
-async function fetchAllData() { await Promise.all([fetchConfig(), fetchInventory()]); fetchTransfers(); fetchSales(); fetchLiquidations(); if (currentUser === 'admin') fetchUsers(); }
+async function fetchAllData() { await Promise.all([fetchConfig(), fetchInventory()]); fetchTransfers(); fetchSales(); fetchLiquidations(); if (currentRole === 'admin') fetchUsers(); }
 function switchTab(tabId) {
     const isAdmin = currentRole === 'admin';
     const adminTabs = ['dashboard-tab', 'bulk-tab', 'config-tab', 'liquidations-tab', 'liquidations-history-tab', 'promotions-tab', 'audit-tab', 'audit-history-tab', 'revision-tab', 'users-tab'];
@@ -262,7 +262,22 @@ async function fetchSales() {
     } catch (e) { console.error(e); } 
 }
 async function fetchLiquidations() { try { const res = await fetchAuth(`${API_URL}/liquidations`); state.liquidations = await res.json(); renderLiquidationsTable(); } catch (e) { console.error(e); } }
-async function fetchUsers() { try { const res = await fetchAuth(`${API_URL}/users`); state.users = await res.json(); renderUsers(); } catch (e) { console.error(e); } }
+async function fetchUsers() { 
+    try { 
+        const res = await fetchAuth(`${API_URL}/users`); 
+        if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.error || 'Error al cargar lista de usuarios');
+        }
+        const data = await res.json();
+        state.users = Array.isArray(data) ? data : []; 
+        renderUsers(); 
+    } catch (e) { 
+        console.error('fetchUsers error:', e); 
+        state.users = [];
+        renderUsers();
+    } 
+}
 
 // RENDER UI
 function renderConfigStores() { document.getElementById('storesList').innerHTML = state.stores.map(s => `<li>${s.name} <button class="btn-icon text-danger" onclick="deleteConfig('stores', ${s.id})"><i class="fas fa-trash"></i></button></li>`).join(''); }
@@ -1375,24 +1390,37 @@ function renderUsers() {
     const ul = document.getElementById('usersList');
     if (!ul) return;
 
+    if (!Array.isArray(state.users)) state.users = [];
+
     const storeSelect = document.getElementById('newUserStore');
-    if (storeSelect && state.stores.length > 0) {
+    if (storeSelect && Array.isArray(state.stores) && state.stores.length > 0) {
         const curVal = storeSelect.value;
         storeSelect.innerHTML = '<option value="">-- Seleccionar Sucursal --</option>' +
             state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
         if (curVal) storeSelect.value = curVal;
     }
 
-    ul.innerHTML = state.users.map(u => `<li>
-        <div style="display:flex; flex-direction:column;">
-            <div style="font-weight:600">${u.username}</div>
-            <small style="color:var(--text-muted); font-size:0.75rem;">
-                Rol: <strong style="color:var(--text-main);">${u.role || 'admin'}</strong>
-                ${u.role === 'vendedor' && u.store_name ? ` · 🏬 ${u.store_name}` : ''}
-            </small>
-        </div>
-        ${u.username !== 'admin' ? `<div><button class="btn-icon text-primary" onclick="editUser(${u.id}, '${u.username}', '${u.role || 'admin'}', ${u.store_id || 'null'})" title="Editar Usuario"><i class="fas fa-edit"></i></button><button class="btn-icon text-danger" onclick="deleteUser(${u.id})" title="Eliminar"><i class="fas fa-trash"></i></button></div>` : '<span class="badge badge-success">Admin Maestro</span>'}
-    </li>`).join('');
+    if (state.users.length === 0) {
+        ul.innerHTML = '<li style="color:var(--text-muted); font-size:0.85rem; padding:0.75rem;">Sin accesos registrados o cargando...</li>';
+        return;
+    }
+
+    ul.innerHTML = state.users.map(u => {
+        const safeUsername = (u.username || '').replace(/'/g, "\\'");
+        const safeRole = (u.role || 'admin').replace(/'/g, "\\'");
+        const storeIdVal = u.store_id || 'null';
+
+        return `<li>
+            <div style="display:flex; flex-direction:column;">
+                <div style="font-weight:600">${u.username}</div>
+                <small style="color:var(--text-muted); font-size:0.75rem;">
+                    Rol: <strong style="color:var(--text-main);">${u.role || 'admin'}</strong>
+                    ${u.role === 'vendedor' && u.store_name ? ` · 🏬 ${u.store_name}` : ''}
+                </small>
+            </div>
+            ${u.username !== 'admin' ? `<div><button type="button" class="btn-icon text-primary" onclick="editUser(${u.id}, '${safeUsername}', '${safeRole}', ${storeIdVal})" title="Editar Usuario"><i class="fas fa-edit"></i></button><button type="button" class="btn-icon text-danger" onclick="deleteUser(${u.id})" title="Eliminar"><i class="fas fa-trash"></i></button></div>` : '<span class="badge badge-success">Admin Maestro</span>'}
+        </li>`;
+    }).join('');
 }
 
 async function editUser(id, currentUsername, currentRoleVal, currentStoreVal) {
