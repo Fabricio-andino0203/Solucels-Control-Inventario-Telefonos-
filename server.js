@@ -310,6 +310,36 @@ const requireAdmin = (req, res, next) => {
 app.use('/api', authenticateToken);
 
 // ==========================================
+// [TEMP] ADMIN RESET ENDPOINT — ELIMINAR TRAS USO
+// ==========================================
+app.post('/api/admin/reset-data', requireAdmin, (req, res) => {
+    try {
+        const tablesToReset = [
+            'audit_items', 'audits', 'warranties', 'sales', 'transfers', 'phones'
+        ];
+        db.transaction(() => {
+            for (const table of tablesToReset) {
+                db.prepare(`DELETE FROM "${table}"`).run();
+                try { db.prepare('DELETE FROM sqlite_sequence WHERE name=?').run(table); } catch(e) {}
+            }
+        })();
+
+        // Verificación final
+        const summary = {};
+        const allTables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all();
+        for (const t of allTables) {
+            summary[t.name] = db.prepare(`SELECT COUNT(*) as c FROM "${t.name}"`).get().c;
+        }
+
+        console.log('[ADMIN RESET] Base de datos de produccion reseteada exitosamente.', summary);
+        res.json({ success: true, message: 'Reset de produccion completado.', summary });
+    } catch (err) {
+        console.error('[ADMIN RESET] Error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==========================================
 // USERS & SECURITY
 // ==========================================
 app.get('/api/users', requireAdmin, (req, res) => {
