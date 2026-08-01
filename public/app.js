@@ -26,7 +26,13 @@ function formatDate(dateStr) {
     return `${day}/${month}/${year} ${strTime}`;
 }
 
-document.addEventListener('DOMContentLoaded', () => { API_URL = `${window.location.protocol}//${window.location.host}/api`; checkAuthAndInit(); });
+document.addEventListener('DOMContentLoaded', () => {
+    API_URL = `${window.location.protocol}//${window.location.host}/api`;
+    // Auto-open Inventario group on startup
+    const invGroup = document.querySelector('.acc-group[data-group="inventario"]');
+    if (invGroup) invGroup.classList.add('open');
+    checkAuthAndInit();
+});
 
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
@@ -42,38 +48,34 @@ function toggleAdminFeatures() {
 
 function applyRolePermissions() {
     const isAdmin = currentRole === 'admin';
-    
-    // Tabs que el vendedor NO puede ver
-    const adminOnlyTabs = [
-        'liquidations-tab', 'liquidations-history-tab', 
-        'audit-tab', 'audit-history-tab', 'bulk-tab',
-        'promotions-tab', 'revision-tab', 'config-tab'
-    ];
-    
-    // Ocultar items de navegación del sidebar
-    const navItems = document.querySelectorAll('.nav li');
-    if(navItems.length > 0) {
-        // Índices: 0=Equipos, 1=Ventas, 2=Garantías, 3=Liquidaciones, 4=Hist.Liq, 
-        // 5=Traslados, 6=Auditoría, 7=Hist.Aud, 8=Masivo, 
-        // 9=Promociones, 10=Revisión, 11=Config, 12=Usuarios
-        const adminOnlyIndexes = [3, 4, 6, 7, 8, 9, 10, 11];
-        navItems.forEach((li, index) => {
-            if (!isAdmin && adminOnlyIndexes.includes(index)) {
-                li.style.display = 'none';
-            } else {
-                li.style.display = 'flex';
-            }
-        });
-    }
 
+    // Accordion groups: hide entire group if admin-only and not admin
+    document.querySelectorAll('.acc-group[data-admin="true"]').forEach(group => {
+        group.style.display = isAdmin ? 'block' : 'none';
+    });
+
+    // Individual submenu items with data-admin
+    document.querySelectorAll('.acc-menu li[data-admin="true"]').forEach(li => {
+        li.style.display = isAdmin ? 'flex' : 'none';
+    });
+
+    // nav-users item
     const navUsers = document.getElementById('nav-users');
     if (navUsers) navUsers.style.display = isAdmin ? 'flex' : 'none';
-    
-    // Ocultar botones de acción destructiva en tablas para vendedores
+
+    // Hide add button for vendedores
     if (!isAdmin) {
         document.querySelectorAll('#inventory-tab header .btn-primary').forEach(b => {
             if (b.textContent.includes('Añadir')) b.style.display = 'none';
         });
+    }
+
+    // Auto-open Inventario group on load for vendedor
+    if (!isAdmin) {
+        const invGroup = document.querySelector('.acc-group[data-group="inventario"]');
+        if (invGroup && !invGroup.classList.contains('open')) {
+            invGroup.classList.add('open');
+        }
     }
 }
 async function checkAuthAndInit() {
@@ -104,26 +106,25 @@ async function fetchAuth(url, options = {}) {
 // FETCH DATA
 async function fetchAllData() { await Promise.all([fetchConfig(), fetchInventory()]); fetchTransfers(); fetchSales(); fetchLiquidations(); if (currentUser === 'admin') fetchUsers(); }
 function switchTab(tabId) {
+    // Activate tab content
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.nav li').forEach(el => el.classList.remove('active'));
-    document.getElementById(tabId).classList.add('active');
+    const tabEl = document.getElementById(tabId);
+    if (tabEl) tabEl.classList.add('active');
 
-    const navItems = document.querySelectorAll('.nav li');
-    if (tabId === 'inventory-tab') navItems[0].classList.add('active');
-    if (tabId === 'sales-tab') navItems[1].classList.add('active');
-    if (tabId === 'warranties-tab') navItems[2].classList.add('active');
-    if (tabId === 'liquidations-tab') navItems[3].classList.add('active');
-    if (tabId === 'liquidations-history-tab') navItems[4].classList.add('active');
-    if (tabId === 'transfers-tab') navItems[5].classList.add('active');
-    if (tabId === 'audit-tab') navItems[6].classList.add('active');
-    if (tabId === 'audit-history-tab') navItems[7].classList.add('active');
-    if (tabId === 'bulk-tab') navItems[8].classList.add('active');
-    if (tabId === 'promotions-tab') navItems[9].classList.add('active');
-    if (tabId === 'revision-tab') navItems[10].classList.add('active');
-    if (tabId === 'config-tab') navItems[11].classList.add('active');
-    if (tabId === 'users-tab') {
-        const usersNav = document.getElementById('nav-users');
-        if (usersNav) usersNav.classList.add('active');
+    // Mark active nav item via data-tab (handles duplicates: config-tab appears in Inventario & Configuración)
+    document.querySelectorAll('.acc-menu li').forEach(li => li.classList.remove('active'));
+    // Select the first visible matching item
+    const activeItem = document.querySelector(`.acc-menu li[data-tab="${tabId}"]:not([style*="display: none"])`) ||
+                       document.querySelector(`.acc-menu li[data-tab="${tabId}"]`);
+    if (activeItem) {
+        activeItem.classList.add('active');
+        // Auto-open the parent accordion group
+        const parentGroup = activeItem.closest('.acc-group');
+        if (parentGroup && !parentGroup.classList.contains('open')) {
+            // Close others first (accordion behaviour)
+            document.querySelectorAll('.acc-group.open').forEach(g => g.classList.remove('open'));
+            parentGroup.classList.add('open');
+        }
     }
 
     if (window.innerWidth <= 820) toggleSidebar();
@@ -137,9 +138,16 @@ function switchTab(tabId) {
     else if (tabId === 'audit-history-tab') { fetchAuditHistory(); }
     else if (tabId === 'revision-tab') { fetchRevisionPhones(); }
     else if (tabId === 'users-tab') fetchUsers();
-    else if (tabId === 'inventory-tab') {
-        fetchAllData(); // Refresh everything correctly
-    }
+    else if (tabId === 'inventory-tab') { fetchAllData(); }
+}
+
+function toggleAccordion(groupName) {
+    const group = document.querySelector(`.acc-group[data-group="${groupName}"]`);
+    if (!group) return;
+    const isOpen = group.classList.contains('open');
+    // Accordion: close all, then open clicked (unless it was already open)
+    document.querySelectorAll('.acc-group.open').forEach(g => g.classList.remove('open'));
+    if (!isOpen) group.classList.add('open');
 }
 function showToast(message, isError = false) {
     const toast = document.getElementById('toast'); toast.textContent = message;
