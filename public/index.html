@@ -48,18 +48,10 @@
         <!-- ACCORDION NAV -->
         <nav class="accordion-nav" id="accordionNav">
 
-            <!-- ═══ 📊 DASHBOARD ═══ -->
-            <div class="acc-group" data-group="dashboard" data-admin="true">
-                <button class="acc-header" onclick="toggleAccordion('dashboard')">
-                    <span><i class="fas fa-chart-line acc-icon"></i> Dashboard</span>
-                    <i class="fas fa-chevron-down acc-arrow"></i>
-                </button>
-                <ul class="acc-menu">
-                    <li data-tab="dashboard-tab" onclick="switchTab('dashboard-tab')">
-                        <i class="fas fa-tachometer-alt"></i> Panel de Control
-                    </li>
-                </ul>
-            </div>
+            <!-- ═══ 📊 DASHBOARD (Direct Link) ═══ -->
+            <button class="acc-header acc-direct-btn" data-tab="dashboard-tab" data-admin="true" onclick="switchTab('dashboard-tab')">
+                <span><i class="fas fa-chart-line acc-icon"></i> Dashboard</span>
+            </button>
 
             <!-- ═══ 📦 INVENTARIO ═══ -->
             <div class="acc-group" data-group="inventario">
@@ -105,18 +97,10 @@
                 </ul>
             </div>
 
-            <!-- ═══ 🏷️ PROMOCIONES ═══ -->
-            <div class="acc-group" data-group="promociones" data-admin="true">
-                <button class="acc-header" onclick="toggleAccordion('promociones')">
-                    <span><i class="fas fa-percent acc-icon"></i> Promociones</span>
-                    <i class="fas fa-chevron-down acc-arrow"></i>
-                </button>
-                <ul class="acc-menu">
-                    <li data-tab="promotions-tab" onclick="switchTab('promotions-tab')">
-                        <i class="fas fa-tag"></i> Gestionar Promociones
-                    </li>
-                </ul>
-            </div>
+            <!-- ═══ 🏷️ PROMOCIONES (Direct Link) ═══ -->
+            <button class="acc-header acc-direct-btn" data-tab="promotions-tab" data-admin="true" onclick="switchTab('promotions-tab')">
+                <span><i class="fas fa-percent acc-icon"></i> Promociones</span>
+            </button>
 
             <!-- ═══ 🔍 AUDITORÍA ═══ -->
             <div class="acc-group" data-group="auditoria" data-admin="true">
@@ -991,9 +975,15 @@
                                 placeholder="Contraseña de acceso" required></div>
                         <div class="form-group">
                             <label><i class="fas fa-user-shield"></i> Rol de Acceso</label>
-                            <select id="newUserRole" required>
+                            <select id="newUserRole" onchange="toggleUserStoreField()" required>
                                 <option value="admin">Administrador (Acceso total)</option>
-                                <option value="vendedor">Vendedor (Acceso limitado)</option>
+                                <option value="vendedor">Vendedor (Acceso limitado a sucursal)</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="newUserStoreGroup" style="display: none;">
+                            <label><i class="fas fa-store"></i> Sucursal Asignada</label>
+                            <select id="newUserStore">
+                                <option value="">-- Seleccionar Sucursal --</option>
                             </select>
                         </div>
                         <button type="submit" class="btn btn-secondary w-100"><i class="fas fa-plus"></i> Crear

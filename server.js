@@ -229,8 +229,9 @@ function initDB() {
     try { db.exec('ALTER TABLE sales ADD COLUMN final_price_type TEXT DEFAULT "Contado"'); } catch(e) { /* exists */ }
     try { db.exec('ALTER TABLE sales ADD COLUMN cost_price REAL DEFAULT 0'); } catch(e) { /* exists */ }
 
-    // === SAFE MIGRATION: User roles ===
+    // === SAFE MIGRATION: User roles & stores ===
     try { db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'"); } catch(e) { /* exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN store_id INTEGER REFERENCES stores(id)'); } catch(e) { /* exists */ }
     
     // === SAFE MIGRATION: Sales sold_by ===
     try { db.exec('ALTER TABLE sales ADD COLUMN sold_by INTEGER'); } catch(e) { /* exists */ }
@@ -283,8 +284,8 @@ app.post('/api/login', (req, res) => {
         if (!user || !bcrypt.compareSync(password, user.password_hash)) {
             return res.status(401).json({error: "Credenciales inválidas."});
         }
-        const token = jwt.sign({ id: user.id, username: user.username, role: user.role || 'admin' }, JWT_SECRET, { expiresIn: '24h' });
-        res.json({ token, username: user.username, role: user.role || 'admin' });
+        const token = jwt.sign({ id: user.id, username: user.username, role: user.role || 'admin', store_id: user.store_id || null }, JWT_SECRET, { expiresIn: '24h' });
+        res.json({ token, username: user.username, role: user.role || 'admin', store_id: user.store_id || null });
     } catch(err) { res.status(500).json({error: err.message}); }
 });
 
@@ -467,16 +468,21 @@ app.get('/api/dashboard/recent-sales', requireAdmin, (req, res) => {
 
 app.get('/api/users', requireAdmin, (req, res) => {
     try {
-        res.json(db.prepare('SELECT id, username, role FROM users').all());
+        res.json(db.prepare(`
+            SELECT u.id, u.username, u.role, u.store_id, s.name as store_name
+            FROM users u
+            LEFT JOIN stores s ON u.store_id = s.id
+        `).all());
     } catch(err) { res.status(500).json({error: err.message}); }
 });
 
 app.post('/api/users', requireAdmin, (req, res) => {
     try {
-        const { username, password, role } = req.body;
+        const { username, password, role, store_id } = req.body;
         const userRole = (role === 'vendedor') ? 'vendedor' : 'admin';
+        const assignedStore = (userRole === 'vendedor' && store_id) ? parseInt(store_id) : null;
         const hash = bcrypt.hashSync(password, 10);
-        const info = db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)').run(username, hash, userRole);
+        const info = db.prepare('INSERT INTO users (username, password_hash, role, store_id) VALUES (?, ?, ?, ?)').run(username, hash, userRole, assignedStore);
         res.json({ id: info.lastInsertRowid, success: true });
     } catch(err) { res.status(400).json({error: err.message}); }
 });
@@ -491,9 +497,11 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
 
 app.put('/api/users/:id', requireAdmin, (req, res) => {
     try {
-        const { username } = req.body;
+        const { username, role, store_id } = req.body;
         if (!username || username.trim() === '') return res.status(400).json({error: "Nombre de usuario inválido."});
-        db.prepare('UPDATE users SET username=? WHERE id=?').run(username.trim(), req.params.id);
+        const userRole = (role === 'vendedor') ? 'vendedor' : 'admin';
+        const assignedStore = (userRole === 'vendedor' && store_id) ? parseInt(store_id) : null;
+        db.prepare('UPDATE users SET username=?, role=?, store_id=? WHERE id=?').run(username.trim(), userRole, assignedStore, req.params.id);
         res.json({ success: true });
     } catch(err) { 
         if(err.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(400).json({error: "El nombre de usuario ya existe."});
@@ -602,13 +610,18 @@ app.get('/api/phones', (req, res) => {
         `;
         let params = [];
 
+        // Aislamiento por Tienda para Vendedor
+        if (req.user && req.user.role === 'vendedor' && req.user.store_id) {
+            sql += ` AND p.store_id = ?`;
+            params.push(req.user.store_id);
+        } else if (store && store !== 'ALL') {
+            sql += ` AND p.store_id = ?`;
+            params.push(store);
+        }
+
         if (brand && brand !== 'ALL') {
             sql += ` AND m.brand_id = ?`;
             params.push(brand);
-        }
-        if (store && store !== 'ALL') {
-            sql += ` AND p.store_id = ?`;
-            params.push(store);
         }
         if (q) {
             sql += ` AND (LOWER(p.imei) LIKE ? OR LOWER(m.name) LIKE ? OR LOWER(b.name) LIKE ?)`;
@@ -844,13 +857,19 @@ app.post('/api/sales', (req, res) => {
 
 app.get('/api/sales', (req, res) => {
     try {
-        res.json(db.prepare(`
+        let sql = `
             SELECT sl.*, p.imei, m.name as model_name, m.ram, m.storage, s.name as store_name, b.name as brand_name, s.id as store_id, m.brand_id
             FROM sales sl JOIN phones p ON sl.phone_id = p.id
             JOIN phone_models m ON p.model_id = m.id JOIN stores s ON sl.store_id = s.id
             JOIN brands b ON m.brand_id = b.id
-            ORDER BY sl.sale_date DESC LIMIT 500
-        `).all());
+        `;
+        let params = [];
+        if (req.user && req.user.role === 'vendedor' && req.user.store_id) {
+            sql += ` WHERE sl.store_id = ?`;
+            params.push(req.user.store_id);
+        }
+        sql += ` ORDER BY sl.sale_date DESC LIMIT 500`;
+        res.json(db.prepare(sql).all(...params));
     } catch (err) { res.status(500).json({error: err.message}); }
 });
 
