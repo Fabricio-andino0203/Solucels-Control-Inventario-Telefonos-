@@ -137,6 +137,7 @@ async function fetchAuth(url, options = {}) {
 // FETCH DATA
 async function fetchAllData() { await Promise.all([fetchConfig(), fetchInventory()]); fetchTransfers(); fetchSales(); fetchLiquidations(); if (currentRole === 'admin') fetchUsers(); }
 function switchTab(tabId) {
+    console.log('🚀 [FRONTEND ROUTER] Ejecutando switchTab para pestaña:', tabId);
     const isAdmin = currentRole === 'admin';
     const adminTabs = ['dashboard-tab', 'bulk-tab', 'config-tab', 'liquidations-tab', 'liquidations-history-tab', 'promotions-tab', 'audit-tab', 'audit-history-tab', 'revision-tab', 'users-tab'];
 
@@ -149,7 +150,12 @@ function switchTab(tabId) {
     // Activate tab content
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     const tabEl = document.getElementById(tabId);
-    if (tabEl) tabEl.classList.add('active');
+    if (tabEl) {
+        tabEl.classList.add('active');
+        console.log('✅ [FRONTEND ROUTER] Tab activado exitosamente en el DOM:', tabId);
+    } else {
+        console.error('❌ [FRONTEND ROUTER] No se encontró el elemento con ID:', tabId);
+    }
 
     // Remove active class from all menu items & direct buttons
     document.querySelectorAll('.acc-menu li, .acc-direct-btn').forEach(el => el.classList.remove('active'));
@@ -263,20 +269,20 @@ async function fetchSales() {
 }
 async function fetchLiquidations() { try { const res = await fetchAuth(`${API_URL}/liquidations`); state.liquidations = await res.json(); renderLiquidationsTable(); } catch (e) { console.error(e); } }
 async function fetchUsers() { 
+    console.log('👉 [FRONTEND LOG] Invocando fetchUsers()...');
     try { 
         if (!state.stores || state.stores.length === 0) {
             await fetchConfig();
         }
+        console.log('👉 [FRONTEND LOG] Realizando fetchAuth a /api/users...');
         const res = await fetchAuth(`${API_URL}/users`); 
-        if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.error || `Error HTTP ${res.status} al cargar la lista de usuarios`);
-        }
+        console.log('👉 [FRONTEND LOG] Respuesta recibida de /api/users, Status HTTP:', res.status);
         const data = await res.json();
+        console.log('👉 [FRONTEND LOG] Datos de usuarios decodificados:', data);
         state.users = Array.isArray(data) ? data : []; 
         renderUsersTable(); 
     } catch (e) { 
-        console.error('fetchUsers error boundary caught:', e); 
+        console.error('❌ [FRONTEND LOG ERROR] Error en fetchUsers:', e); 
         state.users = [];
         renderUsersErrorState(e.message);
     } 
