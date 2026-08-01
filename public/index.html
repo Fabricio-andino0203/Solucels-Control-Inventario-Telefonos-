@@ -844,38 +844,13 @@
             </div>
         </div>
 
-        <!-- INICIO: TAB DE CONFIGURACIÓN -->
-        <div id="config-tab" class="tab-content d-none" style="display: none;">
-            <div class="config-header" style="margin-bottom: 20px;">
-                <h1>Configuración del Sistema</h1>
-                <hr>
-            </div>
-            
-            <!-- SUB-MÓDULO: GESTIÓN DE USUARIOS -->
-            <div class="users-management-section" style="background: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 30px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h2 style="margin: 0; color: #1e293b;">Gestión de Usuarios por Tienda</h2>
-                    <button id="btn-open-user-modal" class="btn btn-primary" onclick="openUserModal()">+ Nuevo Usuario</button>
+        <!-- 6. CONFIGURATION -->
+        <div id="config-tab" class="tab-content">
+            <header>
+                <div>
+                    <h1>Configuración & Catálogo Maestro</h1>
                 </div>
-                
-                <div class="table-responsive">
-                    <table class="table" id="users-table" style="width: 100%; text-align: left; border-collapse: collapse;">
-                        <thead>
-                            <tr style="background-color: #f8f9fa; border-bottom: 2px solid #dee2e6;">
-                                <th style="padding: 12px;">Nombre</th>
-                                <th style="padding: 12px;">Usuario</th>
-                                <th style="padding: 12px;">Rol</th>
-                                <th style="padding: 12px;">Sucursal Asignada</th>
-                                <th style="padding: 12px;">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="users-table-body">
-                            <!-- El JavaScript inyectará los usuarios aquí -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
+            </header>
             <div class="config-grid">
                 <div class="config-panel">
                     <h3><i class="fas fa-store"></i> Sucursales</h3>
@@ -933,7 +908,6 @@
                 </div>
             </div>
         </div>
-        <!-- FIN: TAB DE CONFIGURACIÓN -->
 
         <!-- RESET CONFIRM MODAL -->
         <div id="resetModal" class="modal-overlay">
@@ -1376,36 +1350,55 @@
                 </div>
             </div>
         </div>
-    <!-- MODAL CREAR USUARIO -->
-    <div id="userModal" class="modal d-none" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
-        <div class="modal-content" style="background: #fff; padding: 25px; border-radius: 8px; width: 90%; max-width: 400px;">
-            <h2 style="margin-bottom: 20px;">Registrar Vendedor</h2>
-            <form id="createUserForm">
-                <div style="margin-bottom: 15px;">
-                    <input type="text" id="newUserName" placeholder="Nombre Completo" required style="width: 100%; padding: 10px;">
+    <!-- USER MODAL (CREAR / EDITAR USUARIO DESDE CERO) -->
+    <div id="userModal" class="modal-overlay">
+        <div class="modal" style="max-width: 520px;">
+            <div class="modal-header">
+                <h2 id="userModalTitle"><i class="fas fa-user-shield"></i> Registrar Usuario</h2>
+                <button class="close-btn" onclick="closeModal('userModal')"><i class="fas fa-times"></i></button>
+            </div>
+            <form onsubmit="return saveUserForm(event)">
+                <input type="hidden" id="modalUserId" value="">
+                
+                <div class="form-group mb-3">
+                    <label style="font-weight:600; font-size:0.88rem; margin-bottom:0.4rem; display:block;"><i class="fas fa-id-card"></i> Nombre Completo *</label>
+                    <input type="text" id="modalUserFullName" placeholder="Ej. Juan Pérez / Carlos Rodríguez" required>
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <input type="text" id="newUserUsername" placeholder="Nombre de Usuario (Login)" required style="width: 100%; padding: 10px;">
+
+                <div class="form-group mb-3">
+                    <label style="font-weight:600; font-size:0.88rem; margin-bottom:0.4rem; display:block;"><i class="fas fa-user"></i> Usuario / Email (para Login) *</label>
+                    <input type="text" id="modalUserUsername" placeholder="Ej. jperez / carlos@solucels.com" required autocomplete="off">
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <input type="password" id="newUserPassword" placeholder="Contraseña" required style="width: 100%; padding: 10px;">
+
+                <div class="form-group mb-3">
+                    <label style="font-weight:600; font-size:0.88rem; margin-bottom:0.4rem; display:block;">
+                        <i class="fas fa-key"></i> Contraseña * 
+                        <small id="modalUserPassHelp" style="color:var(--text-muted); font-weight:normal; display:none;">(Dejar en blanco para conservar actual)</small>
+                    </label>
+                    <input type="password" id="modalUserPassword" placeholder="Contraseña de acceso" autocomplete="new-password">
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <select id="newUserRole" required style="width: 100%; padding: 10px;">
-                        <option value="vendedor">Vendedor (Acceso Limitado)</option>
-                        <option value="admin">Administrador</option>
+
+                <div class="form-group mb-3">
+                    <label style="font-weight:600; font-size:0.88rem; margin-bottom:0.4rem; display:block;"><i class="fas fa-user-shield"></i> Rol de Acceso *</label>
+                    <select id="modalUserRole" onchange="onModalUserRoleChange()" required class="input-select-premium" style="width:100%; padding:0.75rem; border-radius:var(--radius-sm); background:var(--bg-color); color:var(--text-main); border:1px solid var(--border-color);">
+                        <option value="admin">Administrador (Acceso total al sistema)</option>
+                        <option value="vendedor">Vendedor (Acceso restringido a su tienda)</option>
                     </select>
                 </div>
-                <div style="margin-bottom: 20px;">
-                    <select id="newUserBranch" required style="width: 100%; padding: 10px;">
-                        <option value="INVERSIONES SOLUCELS #2">INVERSIONES SOLUCELS #2</option>
-                        <option value="INVERSIONES SOLUCELS #6">INVERSIONES SOLUCELS #6</option>
-                        <option value="INVERSIONES SOLUCELS #7">INVERSIONES SOLUCELS #7</option>
+
+                <div class="form-group mb-4" id="modalUserStoreGroup" style="display:none;">
+                    <label style="font-weight:600; font-size:0.88rem; margin-bottom:0.4rem; display:block;"><i class="fas fa-store"></i> Sucursal Asignada *</label>
+                    <select id="modalUserStore" class="input-select-premium" style="width:100%; padding:0.75rem; border-radius:var(--radius-sm); background:var(--bg-color); color:var(--text-main); border:1px solid var(--border-color);">
+                        <option value="">-- Seleccionar Sucursal --</option>
                     </select>
+                    <small style="color:var(--text-muted); font-size:0.78rem; display:block; margin-top:0.35rem;">
+                        <i class="fas fa-info-circle"></i> Los vendedores solo podrán visualizar y vender el inventario de esta tienda.
+                    </small>
                 </div>
-                <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                    <button type="button" class="btn btn-secondary" onclick="closeUserModal()">Cancelar</button>
-                    <button type="submit" class="btn btn-success">Guardar</button>
+
+                <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:1.5rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('userModal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" style="padding:0.7rem 1.4rem;"><i class="fas fa-save"></i> Guardar Usuario</button>
                 </div>
             </form>
         </div>
