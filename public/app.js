@@ -269,16 +269,16 @@ async function fetchUsers() {
         }
         const res = await fetchAuth(`${API_URL}/users`); 
         if (!res.ok) {
-            const errData = await res.json();
-            throw new Error(errData.error || 'Error al cargar lista de usuarios');
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `Error HTTP ${res.status} al cargar la lista de usuarios`);
         }
         const data = await res.json();
         state.users = Array.isArray(data) ? data : []; 
-        renderUsers(); 
+        renderUsersTable(); 
     } catch (e) { 
-        console.error('fetchUsers error:', e); 
+        console.error('fetchUsers error boundary caught:', e); 
         state.users = [];
-        renderUsers();
+        renderUsersErrorState(e.message);
     } 
 }
 
@@ -1389,114 +1389,207 @@ function toggleUserStoreField() {
     }
 }
 
-function renderUsers() {
-    const ul = document.getElementById('usersList');
-    if (!ul) return;
+// ==========================================
+// MÓDULO DE USUARIOS Y PERMISOS (RECONSTRUIDO DESDE CERO)
+// ==========================================
+
+function renderUsersTable() {
+    const wrapper = document.getElementById('usersTableWrapper');
+    if (!wrapper) return;
 
     if (!Array.isArray(state.users)) state.users = [];
 
-    const storeSelect = document.getElementById('newUserStore');
-    if (storeSelect && Array.isArray(state.stores) && state.stores.length > 0) {
-        const curVal = storeSelect.value;
-        storeSelect.innerHTML = '<option value="">-- Seleccionar Sucursal --</option>' +
-            state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-        if (curVal) storeSelect.value = curVal;
-    }
-
     if (state.users.length === 0) {
-        ul.innerHTML = `
-            <li style="display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:2rem 1.5rem; gap:1rem; background:rgba(255,255,255,0.03); border:1px dashed var(--border-color); border-radius:var(--radius-md); width:100%;">
-                <div style="width:50px; height:50px; border-radius:50%; background:rgba(37,99,235,0.12); display:flex; align-items:center; justify-content:center;">
-                    <i class="fas fa-users-slash" style="font-size:1.4rem; color:var(--primary);"></i>
-                </div>
-                <div>
-                    <h4 style="margin:0 0 0.3rem 0; font-size:1rem; color:var(--text-main); font-weight:700;">No hay usuarios registrados</h4>
-                    <p style="margin:0; font-size:0.85rem; color:var(--text-muted);">No se encontraron accesos configurados en el sistema.</p>
-                </div>
-                <button type="button" class="btn btn-primary" onclick="focusNewUserForm()" style="padding:0.55rem 1.2rem; font-size:0.85rem; border-radius:8px; display:inline-flex; align-items:center; gap:0.5rem;">
+        wrapper.innerHTML = `
+            <div style="text-align:center; padding:3.5rem 1.5rem; background:rgba(255,255,255,0.02); border-radius:var(--radius-md);">
+                <i class="fas fa-users-slash" style="font-size:3rem; color:var(--text-muted); display:block; margin-bottom:1rem;"></i>
+                <h3 style="margin:0 0 0.5rem 0; color:var(--text-main); font-weight:700;">No hay usuarios registrados</h3>
+                <p style="margin:0 0 1.5rem 0; color:var(--text-muted); font-size:0.9rem;">No se encontraron accesos configurados en el sistema actualmente.</p>
+                <button type="button" class="btn btn-primary" onclick="openUserModal()" style="padding:0.65rem 1.4rem; font-size:0.9rem; border-radius:8px;">
                     <i class="fas fa-user-plus"></i> Crear Nuevo Usuario
                 </button>
-            </li>
+            </div>
         `;
         return;
     }
 
-    ul.innerHTML = state.users.map(u => {
-        const safeUsername = (u.username || '').replace(/'/g, "\\'");
-        const safeRole = (u.role || 'admin').replace(/'/g, "\\'");
-        const storeIdVal = u.store_id || 'null';
-
-        return `<li>
-            <div style="display:flex; flex-direction:column;">
-                <div style="font-weight:600">${u.username}</div>
-                <small style="color:var(--text-muted); font-size:0.75rem;">
-                    Rol: <strong style="color:var(--text-main);">${u.role || 'admin'}</strong>
-                    ${u.role === 'vendedor' && u.store_name ? ` · 🏬 ${u.store_name}` : ''}
-                </small>
-            </div>
-            ${u.username !== 'admin' ? `<div><button type="button" class="btn-icon text-primary" onclick="editUser(${u.id}, '${safeUsername}', '${safeRole}', ${storeIdVal})" title="Editar Usuario"><i class="fas fa-edit"></i></button><button type="button" class="btn-icon text-danger" onclick="deleteUser(${u.id})" title="Eliminar"><i class="fas fa-trash"></i></button></div>` : '<span class="badge badge-success">Admin Maestro</span>'}
-        </li>`;
-    }).join('');
+    wrapper.innerHTML = `
+        <table id="usersTable" class="w-100">
+            <thead>
+                <tr>
+                    <th>Nombre Completo</th>
+                    <th>Usuario / Email</th>
+                    <th>Rol de Acceso</th>
+                    <th>Sucursal Asignada</th>
+                    <th class="text-right">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${state.users.map(u => `
+                    <tr>
+                        <td data-label="Nombre Completo">
+                            <strong>${u.full_name || u.username}</strong>
+                        </td>
+                        <td data-label="Usuario / Email">
+                            <span style="font-family:monospace; font-size:0.9rem; color:var(--primary);">${u.username}</span>
+                        </td>
+                        <td data-label="Rol">
+                            <span class="badge ${u.role === 'admin' ? 'badge-primary' : 'badge-secondary'}">
+                                <i class="fas ${u.role === 'admin' ? 'fa-user-shield' : 'fa-user'}"></i> ${u.role === 'admin' ? 'Administrador' : 'Vendedor'}
+                            </span>
+                        </td>
+                        <td data-label="Sucursal">
+                            ${u.role === 'vendedor' && u.store_name ? `<span class="badge badge-success"><i class="fas fa-store"></i> ${u.store_name}</span>` : '<span style="color:var(--text-muted); font-size:0.85rem;">Todas (Acceso Global)</span>'}
+                        </td>
+                        <td class="text-right" data-label="Acciones">
+                            <div style="display:flex; justify-content:flex-end; gap:0.4rem;">
+                                <button type="button" class="btn-icon text-primary" onclick="openUserModal(${u.id})" title="Editar"><i class="fas fa-edit"></i></button>
+                                ${u.username !== 'admin' ? `<button type="button" class="btn-icon text-danger" onclick="deleteUser(${u.id})" title="Eliminar"><i class="fas fa-trash"></i></button>` : '<span class="badge badge-success" style="font-size:0.7rem;">Admin Maestro</span>'}
+                            </div>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
 }
 
-async function editUser(id, currentUsername, currentRoleVal, currentStoreVal) {
-    const newName = prompt('Ingrese el nuevo nombre de usuario:', currentUsername);
-    if (!newName || newName.trim() === '') return;
+function renderUsersErrorState(errMsg) {
+    const wrapper = document.getElementById('usersTableWrapper');
+    if (!wrapper) return;
+    wrapper.innerHTML = `
+        <div style="text-align:center; padding:3rem 1.5rem; background:rgba(239,68,68,0.05); border:1px dashed var(--danger); border-radius:var(--radius-md);">
+            <i class="fas fa-exclamation-triangle" style="font-size:2.8rem; color:var(--danger); display:block; margin-bottom:1rem;"></i>
+            <h3 style="margin:0 0 0.5rem 0; color:var(--text-main); font-weight:700;">Error al cargar datos de usuarios</h3>
+            <p style="margin:0 0 1.5rem 0; color:var(--danger); font-size:0.9rem;">${errMsg || 'No se pudo obtener la respuesta del servidor.'}</p>
+            <button type="button" class="btn btn-secondary" onclick="fetchUsers()" style="padding:0.6rem 1.2rem; font-size:0.9rem; border-radius:8px;">
+                <i class="fas fa-sync-alt"></i> Reintentar Carga
+            </button>
+        </div>
+    `;
+}
 
-    let newRole = currentRoleVal;
-    let newStore = currentStoreVal;
+function openUserModal(userId = null) {
+    const modalTitle = document.getElementById('userModalTitle');
+    const idInput = document.getElementById('modalUserId');
+    const nameInput = document.getElementById('modalUserFullName');
+    const userInput = document.getElementById('modalUserUsername');
+    const passInput = document.getElementById('modalUserPassword');
+    const passHelp = document.getElementById('modalUserPassHelp');
+    const roleSelect = document.getElementById('modalUserRole');
+    const storeSelect = document.getElementById('modalUserStore');
 
-    if (confirm(`¿Configurar como Vendedor con sucursal específica? (Aceptar = Vendedor, Cancelar = Administrador)`)) {
-        newRole = 'vendedor';
-        const storeOptions = state.stores.map(s => `${s.id}: ${s.name}`).join('\n');
-        const storeStr = prompt(`Ingrese el ID de la sucursal asignada:\n${storeOptions}`, currentStoreVal || (state.stores[0]?.id || '1'));
-        if (storeStr) newStore = parseInt(storeStr);
-    } else {
-        newRole = 'admin';
-        newStore = null;
+    // Populate stores dropdown
+    if (storeSelect && state.stores) {
+        storeSelect.innerHTML = '<option value="">-- Seleccionar Sucursal --</option>' +
+            state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
     }
 
-    try {
-        const res = await fetchAuth(`${API_URL}/users/${id}`, { 
-            method: 'PUT', 
-            headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ username: newName.trim(), role: newRole, store_id: newStore }) 
-        });
-        if (!res.ok) throw new Error((await res.json()).error);
-        fetchUsers(); showToast('Usuario actualizado exitosamente');
-    } catch (err) { showToast(err.message, true); }
+    if (userId) {
+        const u = state.users.find(x => x.id === userId);
+        if (!u) return;
+        modalTitle.innerHTML = '<i class="fas fa-user-edit"></i> Editar Usuario';
+        idInput.value = u.id;
+        nameInput.value = u.full_name || '';
+        userInput.value = u.username || '';
+        passInput.value = '';
+        passInput.required = false;
+        if (passHelp) passHelp.style.display = 'inline';
+        roleSelect.value = u.role || 'admin';
+        if (storeSelect) storeSelect.value = u.store_id || '';
+    } else {
+        modalTitle.innerHTML = '<i class="fas fa-user-plus"></i> Registrar Nuevo Usuario';
+        idInput.value = '';
+        nameInput.value = '';
+        userInput.value = '';
+        passInput.value = '';
+        passInput.required = true;
+        if (passHelp) passHelp.style.display = 'none';
+        roleSelect.value = 'admin';
+        if (storeSelect) storeSelect.value = '';
+    }
+
+    onModalUserRoleChange();
+    openModal('userModal');
 }
 
-async function addUser(e) {
+function onModalUserRoleChange() {
+    const roleSelect = document.getElementById('modalUserRole');
+    const storeGroup = document.getElementById('modalUserStoreGroup');
+    const storeSelect = document.getElementById('modalUserStore');
+    if (!roleSelect || !storeGroup) return;
+
+    if (roleSelect.value === 'vendedor') {
+        storeGroup.style.display = 'block';
+        if (storeSelect) storeSelect.required = true;
+    } else {
+        storeGroup.style.display = 'none';
+        if (storeSelect) { storeSelect.required = false; storeSelect.value = ''; }
+    }
+}
+
+async function saveUserForm(e) {
     e.preventDefault();
+    const userId = document.getElementById('modalUserId').value;
+    const fullName = document.getElementById('modalUserFullName').value.trim();
+    const username = document.getElementById('modalUserUsername').value.trim();
+    const password = document.getElementById('modalUserPassword').value;
+    const role = document.getElementById('modalUserRole').value;
+    const storeId = document.getElementById('modalUserStore').value;
+
+    if (role === 'vendedor' && !storeId) {
+        showToast('Requisito Obligatorio: Seleccione una sucursal para el Vendedor.', true);
+        return false;
+    }
+
+    const payload = {
+        full_name: fullName,
+        username: username,
+        password: password,
+        role: role,
+        store_id: role === 'vendedor' ? parseInt(storeId) : null
+    };
+
     try {
-        const payload = { 
-            username: document.getElementById('newUsername').value, 
-            password: document.getElementById('newUserPassword').value,
-            role: document.getElementById('newUserRole').value,
-            store_id: document.getElementById('newUserStore').value || null
-        };
-        if (payload.role === 'vendedor' && !payload.store_id) {
-            showToast('Debe seleccionar una sucursal para el Vendedor', true);
-            return false;
+        let res;
+        if (userId) {
+            res = await fetchAuth(`${API_URL}/users/${userId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        } else {
+            if (!password) {
+                showToast('Contraseña es requerida para un nuevo usuario', true);
+                return false;
+            }
+            res = await fetchAuth(`${API_URL}/users`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
         }
-        const res = await fetchAuth(`${API_URL}/users`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (!res.ok) throw new Error((await res.json()).error);
-        fetchUsers(); showToast('Usuario Creado'); e.target.reset();
-        toggleUserStoreField();
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || 'Error al guardar usuario');
+        }
+
+        showToast(userId ? 'Usuario Actualizado Exitosamente' : 'Nuevo Usuario Registrado');
+        closeModal('userModal');
+        await fetchUsers();
     } catch (err) { showToast(err.message, true); }
     return false;
 }
+
 async function deleteUser(id) {
     if (!confirm('¿Eliminar acceso del usuario seleccionado?')) return;
-    try { const res = await fetchAuth(`${API_URL}/users/${id}`, { method: 'DELETE' }); if (!res.ok) throw new Error((await res.json()).error); fetchUsers(); } catch (err) { showToast(err.message, true); }
-}
-function focusNewUserForm() {
-    const input = document.getElementById('newUsername');
-    if (input) {
-        input.focus();
-        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    try { 
+        const res = await fetchAuth(`${API_URL}/users/${id}`, { method: 'DELETE' }); 
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error eliminando usuario'); 
+        fetchUsers(); 
+        showToast('Usuario eliminado del sistema');
+    } catch (err) { showToast(err.message, true); }
 }
 async function changeMyPassword(e) {
     e.preventDefault();

@@ -498,7 +498,7 @@ app.get('/api/dashboard/recent-sales', requireAdmin, (req, res) => {
 app.get('/api/users', requireAdmin, (req, res) => {
     try {
         const users = db.prepare(`
-            SELECT u.id, u.username, u.role, u.store_id, s.name as store_name
+            SELECT u.id, u.full_name, u.username, u.role, u.store_id, s.name as store_name
             FROM users u
             LEFT JOIN stores s ON u.store_id = s.id
             ORDER BY u.id ASC
@@ -512,34 +512,56 @@ app.get('/api/users', requireAdmin, (req, res) => {
 
 app.post('/api/users', requireAdmin, (req, res) => {
     try {
-        const { username, password, role, store_id } = req.body;
+        const { full_name, username, password, role, store_id } = req.body;
+        if (!username || !password) {
+            return res.status(400).json({ error: "Usuario y contraseña son requeridos." });
+        }
         const userRole = (role === 'vendedor') ? 'vendedor' : 'admin';
         const assignedStore = (userRole === 'vendedor' && store_id) ? parseInt(store_id) : null;
+        const fullNameVal = (full_name && full_name.trim()) ? full_name.trim() : username.trim();
         const hash = bcrypt.hashSync(password, 10);
-        const info = db.prepare('INSERT INTO users (username, password_hash, role, store_id) VALUES (?, ?, ?, ?)').run(username, hash, userRole, assignedStore);
+        const info = db.prepare('INSERT INTO users (full_name, username, password_hash, role, store_id) VALUES (?, ?, ?, ?, ?)').run(fullNameVal, username.trim(), hash, userRole, assignedStore);
         res.json({ id: info.lastInsertRowid, success: true });
-    } catch(err) { res.status(400).json({error: err.message}); }
+    } catch(err) { 
+        if (err.message && err.message.includes('UNIQUE')) {
+            return res.status(400).json({ error: "El nombre de usuario ya existe en el sistema." });
+        }
+        res.status(400).json({ error: err.message }); 
+    }
 });
 
 app.delete('/api/users/:id', requireAdmin, (req, res) => {
     try {
-        if(req.params.id == req.user.id) return res.status(400).json({error: "No puedes eliminarte a ti mismo."});
+        const targetUser = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+        if (!targetUser) return res.status(404).json({ error: "Usuario no encontrado." });
+        if (targetUser.username === 'admin') return res.status(400).json({ error: "No se puede eliminar al Administrador Maestro del sistema." });
+        if (targetUser.id == req.user.id) return res.status(400).json({ error: "No puedes eliminar tu propia cuenta en sesión." });
+        
         db.prepare('DELETE FROM users WHERE id=?').run(req.params.id);
         res.json({ success: true });
-    } catch(err) { res.status(400).json({error: err.message}); }
+    } catch(err) { res.status(400).json({ error: err.message }); }
 });
 
 app.put('/api/users/:id', requireAdmin, (req, res) => {
     try {
-        const { username, role, store_id } = req.body;
-        if (!username || username.trim() === '') return res.status(400).json({error: "Nombre de usuario inválido."});
+        const { full_name, username, password, role, store_id } = req.body;
+        if (!username || username.trim() === '') return res.status(400).json({ error: "Nombre de usuario inválido." });
         const userRole = (role === 'vendedor') ? 'vendedor' : 'admin';
         const assignedStore = (userRole === 'vendedor' && store_id) ? parseInt(store_id) : null;
-        db.prepare('UPDATE users SET username=?, role=?, store_id=? WHERE id=?').run(username.trim(), userRole, assignedStore, req.params.id);
+        const fullNameVal = (full_name && full_name.trim()) ? full_name.trim() : username.trim();
+
+        if (password && password.trim() !== '') {
+            const hash = bcrypt.hashSync(password.trim(), 10);
+            db.prepare('UPDATE users SET full_name=?, username=?, password_hash=?, role=?, store_id=? WHERE id=?')
+                .run(fullNameVal, username.trim(), hash, userRole, assignedStore, req.params.id);
+        } else {
+            db.prepare('UPDATE users SET full_name=?, username=?, role=?, store_id=? WHERE id=?')
+                .run(fullNameVal, username.trim(), userRole, assignedStore, req.params.id);
+        }
         res.json({ success: true });
     } catch(err) { 
-        if(err.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(400).json({error: "El nombre de usuario ya existe."});
-        res.status(400).json({error: err.message}); 
+        if (err.message && err.message.includes('UNIQUE')) return res.status(400).json({ error: "El nombre de usuario ya existe." });
+        res.status(400).json({ error: err.message }); 
     }
 });
 
