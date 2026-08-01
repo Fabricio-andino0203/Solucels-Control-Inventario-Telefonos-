@@ -130,7 +130,7 @@ async function fetchAuth(url, options = {}) {
     if (!options.headers) options.headers = {};
     options.headers['Authorization'] = `Bearer ${getAuthToken()}`;
     const res = await fetch(url, options);
-    if (res.status === 401 || res.status === 403) { logout(); throw new Error('Sesión Expirada'); }
+    if (res.status === 401) { logout(); throw new Error('Sesión Expirada'); }
     return res;
 }
 
@@ -1404,7 +1404,20 @@ function renderUsers() {
     }
 
     if (state.users.length === 0) {
-        ul.innerHTML = '<li style="color:var(--text-muted); font-size:0.85rem; padding:0.75rem;">Sin accesos registrados o cargando...</li>';
+        ul.innerHTML = `
+            <li style="display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:2rem 1.5rem; gap:1rem; background:rgba(255,255,255,0.03); border:1px dashed var(--border-color); border-radius:var(--radius-md); width:100%;">
+                <div style="width:50px; height:50px; border-radius:50%; background:rgba(37,99,235,0.12); display:flex; align-items:center; justify-content:center;">
+                    <i class="fas fa-users-slash" style="font-size:1.4rem; color:var(--primary);"></i>
+                </div>
+                <div>
+                    <h4 style="margin:0 0 0.3rem 0; font-size:1rem; color:var(--text-main); font-weight:700;">No hay usuarios registrados</h4>
+                    <p style="margin:0; font-size:0.85rem; color:var(--text-muted);">No se encontraron accesos configurados en el sistema.</p>
+                </div>
+                <button type="button" class="btn btn-primary" onclick="focusNewUserForm()" style="padding:0.55rem 1.2rem; font-size:0.85rem; border-radius:8px; display:inline-flex; align-items:center; gap:0.5rem;">
+                    <i class="fas fa-user-plus"></i> Crear Nuevo Usuario
+                </button>
+            </li>
+        `;
         return;
     }
 
@@ -1477,6 +1490,13 @@ async function addUser(e) {
 async function deleteUser(id) {
     if (!confirm('¿Eliminar acceso del usuario seleccionado?')) return;
     try { const res = await fetchAuth(`${API_URL}/users/${id}`, { method: 'DELETE' }); if (!res.ok) throw new Error((await res.json()).error); fetchUsers(); } catch (err) { showToast(err.message, true); }
+}
+function focusNewUserForm() {
+    const input = document.getElementById('newUsername');
+    if (input) {
+        input.focus();
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
 }
 async function changeMyPassword(e) {
     e.preventDefault();

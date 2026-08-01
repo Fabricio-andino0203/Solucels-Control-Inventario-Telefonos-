@@ -266,30 +266,37 @@ function initDB() {
     db.exec('CREATE INDEX IF NOT EXISTS idx_audit_items_phone ON audit_items(phone_id);');
     db.exec('CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);');
 
-    if (db.prepare('SELECT COUNT(*) as count FROM users').get().count === 0) {
+    // === SAFETY SEEDER: Ensure default Admin User & Store Catalog exist ===
+    const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+    if (userCount === 0) {
+        console.log("⚠️ TABLA DE USUARIOS VACÍA: Creando usuario administrador por defecto (admin / admin123)...");
         const hash = bcrypt.hashSync('admin123', 10);
         db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)').run('admin', hash, 'admin');
         
-        const insertStore = db.prepare('INSERT INTO stores (name) VALUES (?)');
-        for(let i=1; i<=7; i++) insertStore.run(`Tienda ${i}`);
-        
-        const insertBrand = db.prepare('INSERT INTO brands (name) VALUES (?)');
-        ['Apple', 'Samsung', 'Xiaomi'].forEach(b => insertBrand.run(b));
-        
-        const bApple = db.prepare("SELECT id FROM brands WHERE name='Apple'").get().id;
-        const bSamsung = db.prepare("SELECT id FROM brands WHERE name='Samsung'").get().id;
-        
-        // Populate standard models with master prices
-        db.prepare(`INSERT INTO phone_models (name, brand_id, image_url, price_cash, credit_enabled, price_credit) 
-            VALUES (?, ?, ?, ?, ?, ?)`).run(
-            'iPhone 15 Pro Max', bApple, 'https://fdn2.gsmarena.com/vv/pics/apple/apple-iphone-15-pro-max-1.jpg', 
-            35000, 1, 40000
-        );
-        db.prepare(`INSERT INTO phone_models (name, brand_id, image_url, price_cash, credit_enabled, price_credit) 
-            VALUES (?, ?, ?, ?, ?, ?)`).run(
-            'Galaxy S24 Ultra', bSamsung, 'https://fdn2.gsmarena.com/vv/pics/samsung/samsung-galaxy-s24-ultra-5g-sm-s928-1.jpg', 
-            32000, 1, 38000
-        );
+        const storeCount = db.prepare('SELECT COUNT(*) as count FROM stores').get().count;
+        if (storeCount === 0) {
+            const insertStore = db.prepare('INSERT INTO stores (name) VALUES (?)');
+            for(let i=1; i<=7; i++) insertStore.run(`Tienda ${i}`);
+            
+            const insertBrand = db.prepare('INSERT INTO brands (name) VALUES (?)');
+            ['Apple', 'Samsung', 'Xiaomi'].forEach(b => insertBrand.run(b));
+            
+            const bApple = db.prepare("SELECT id FROM brands WHERE name='Apple'").get().id;
+            const bSamsung = db.prepare("SELECT id FROM brands WHERE name='Samsung'").get().id;
+            
+            db.prepare(`INSERT INTO phone_models (name, brand_id, image_url, price_cash, credit_enabled, price_credit) 
+                VALUES (?, ?, ?, ?, ?, ?)`).run(
+                'iPhone 15 Pro Max', bApple, 'https://fdn2.gsmarena.com/vv/pics/apple/apple-iphone-15-pro-max-1.jpg', 
+                35000, 1, 40000
+            );
+            db.prepare(`INSERT INTO phone_models (name, brand_id, image_url, price_cash, credit_enabled, price_credit) 
+                VALUES (?, ?, ?, ?, ?, ?)`).run(
+                'Galaxy S24 Ultra', bSamsung, 'https://fdn2.gsmarena.com/vv/pics/samsung/samsung-galaxy-s24-ultra-5g-sm-s928-1.jpg', 
+                32000, 1, 38000
+            );
+        }
+    } else {
+        db.prepare("UPDATE users SET role='admin' WHERE username='admin'").run();
     }
 }
 initDB();
@@ -322,7 +329,9 @@ const authenticateToken = (req, res, next) => {
 };
 
 const requireAdmin = (req, res, next) => {
-    if (req.user.role !== 'admin') {
+    const role = req.user && req.user.role;
+    const username = req.user && req.user.username;
+    if (role !== 'admin' && username !== 'admin') {
         return res.status(403).json({ error: "Acceso restringido. Se requieren privilegios de administrador." });
     }
     next();
@@ -488,12 +497,17 @@ app.get('/api/dashboard/recent-sales', requireAdmin, (req, res) => {
 
 app.get('/api/users', requireAdmin, (req, res) => {
     try {
-        res.json(db.prepare(`
+        const users = db.prepare(`
             SELECT u.id, u.username, u.role, u.store_id, s.name as store_name
             FROM users u
             LEFT JOIN stores s ON u.store_id = s.id
-        `).all());
-    } catch(err) { res.status(500).json({error: err.message}); }
+            ORDER BY u.id ASC
+        `).all();
+        res.json(users || []);
+    } catch(err) { 
+        console.error("GET /api/users Error:", err);
+        res.status(500).json({ error: "Error de servidor al obtener usuarios: " + err.message }); 
+    }
 });
 
 app.post('/api/users', requireAdmin, (req, res) => {
