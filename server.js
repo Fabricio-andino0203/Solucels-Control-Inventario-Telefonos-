@@ -233,8 +233,28 @@ function initDB() {
     try { db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'"); } catch(e) { /* exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN store_id INTEGER REFERENCES stores(id)'); } catch(e) { /* exists */ }
     
-    // === SAFE MIGRATION: Sales sold_by ===
+    // === SAFE MIGRATION: Sales invoice & sold_by ===
     try { db.exec('ALTER TABLE sales ADD COLUMN sold_by INTEGER'); } catch(e) { /* exists */ }
+    try { db.exec('ALTER TABLE sales ADD COLUMN invoice_path TEXT'); } catch(e) { /* exists */ }
+    try { db.exec('ALTER TABLE sales ADD COLUMN invoice_thumb TEXT'); } catch(e) { /* exists */ }
+
+    // === TRANSFER REQUESTS TABLE (FASE 4) ===
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS transfer_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone_id INTEGER,
+            model_id INTEGER NOT NULL,
+            from_store_id INTEGER NOT NULL,
+            to_store_id INTEGER NOT NULL,
+            requested_by INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Pendiente',
+            created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+            FOREIGN KEY(model_id) REFERENCES phone_models(id),
+            FOREIGN KEY(from_store_id) REFERENCES stores(id),
+            FOREIGN KEY(to_store_id) REFERENCES stores(id),
+            FOREIGN KEY(requested_by) REFERENCES users(id)
+        );
+    `);
 
     // === PERFORMANCE INDEXES ===
     db.exec('CREATE INDEX IF NOT EXISTS idx_phones_imei ON phones(imei);');
@@ -784,10 +804,17 @@ app.delete('/api/transfers/:id', requireAdmin, (req, res) => {
 // ==========================================
 // SALES (BLIND MASTER CATALOG PRICING)
 // ==========================================
-app.post('/api/sales', (req, res) => {
-    console.log("POST /api/sales - BODY:", req.body);
+app.post('/api/sales', upload.single('invoice'), async (req, res) => {
     const { phone_id, store_id, sale_type, prima, notes, discount, price_type, sale_date } = req.body;
     try {
+        let invoicePaths = { path: null, thumb: null };
+        if (req.file) {
+            const ts = Date.now();
+            invoicePaths = await processImage(req.file.buffer, 'comprobantes', `factura_${phone_id}_${ts}.webp`);
+        } else {
+            return res.status(400).json({ error: "Requisito Obligatorio: Debe adjuntar la fotografía o comprobante de la factura de venta." });
+        }
+
         const phone = db.prepare(`SELECT p.id, p.status, p.store_id, m.price_cash, m.credit_enabled, m.price_credit, m.price_wholesale, m.max_discount, m.offer_price, m.price_cost 
                                   FROM phones p JOIN phone_models m ON p.model_id = m.id WHERE p.id=?`).get(phone_id);
         
@@ -798,14 +825,9 @@ app.post('/api/sales', (req, res) => {
         const actDiscount = parseFloat(discount) || 0;
         const actPriceType = price_type || 'Contado';
         
-        // ADMIN ONLY SECURITY CHECK (Soft validation in backend for safety)
         const user = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
         if (actDiscount > 0 && user.username !== 'admin') {
             return res.status(403).json({error: "Solo administradores pueden aplicar descuentos manuales."});
-        }
-        if (actDiscount > (phone.max_discount || 0) && user.username !== 'admin') {
-             // Even if user is admin, we might want to alert, but the user said "admin has access, don't care about security".
-             // I'll allow admin to exceed max_discount if they want, but guid it.
         }
 
         let base_price = 0;
@@ -830,9 +852,8 @@ app.post('/api/sales', (req, res) => {
 
         if (actPriceType === 'Crédito') {
             saldo = final_price - actPrima;
-            if (saldo > 0) payment_status = 'Pendiente';
+            payment_status = 'Pendiente Crédito Financiera';
         } else {
-            // Contado o Mayorista
             actPrima = final_price;
             saldo = 0;
         }
@@ -842,14 +863,13 @@ app.post('/api/sales', (req, res) => {
             if (!finalDate) {
                 finalDate = getLocalTime();
             } else if (finalDate.length === 10) { 
-                // If only YYYY-MM-DD is provided, append a default time
                 finalDate += " 12:00:00";
             }
 
             db.prepare("UPDATE phones SET status='Vendido' WHERE id=?").run(phone_id);
-            const stmt = db.prepare(`INSERT INTO sales (phone_id, store_id, sale_type, final_price, prima, saldo, payment_status, client_name, installments, notes, discount, final_price_type, sale_date, cost_price, sold_by) 
-                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-            stmt.run(phone_id, store_id, sale_type, final_price, actPrima, saldo, payment_status, defaultClient, null, notes || '', actDiscount, actPriceType, finalDate, phone.price_cost || 0, req.user.id);
+            const stmt = db.prepare(`INSERT INTO sales (phone_id, store_id, sale_type, final_price, prima, saldo, payment_status, client_name, installments, notes, discount, final_price_type, sale_date, cost_price, sold_by, invoice_path, invoice_thumb) 
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            stmt.run(phone_id, store_id, sale_type || actPriceType, final_price, actPrima, saldo, payment_status, defaultClient, null, notes || '', actDiscount, actPriceType, finalDate, phone.price_cost || 0, req.user.id, invoicePaths.path, invoicePaths.thumb);
         })();
         res.json({ success: true, final_price });
     } catch(err) { res.status(400).json({error: err.message}); }
@@ -1334,6 +1354,42 @@ app.get('/api/warranties', (req, res) => {
         
         res.json(db.prepare(sql + ' ORDER BY w.created_at DESC LIMIT 500').all());
     } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ==========================================
+// INTER-STORE SEARCH & TRANSFER REQUESTS (FASE 4)
+// ==========================================
+app.get('/api/phones/master-stock', (req, res) => {
+    const { model_id, q } = req.query;
+    try {
+        let sql = `
+            SELECT s.id as store_id, s.name as store_name,
+                   COUNT(p.id) as stock_qty
+            FROM stores s
+            LEFT JOIN phones p ON p.store_id = s.id AND p.status = 'Disponible'
+        `;
+        let params = [];
+        if (model_id) {
+            sql += ` AND p.model_id = ?`;
+            params.push(model_id);
+        }
+        sql += ` GROUP BY s.id ORDER BY s.name ASC`;
+        const rows = db.prepare(sql).all(...params);
+        res.json(rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/transfer-requests', (req, res) => {
+    const { model_id, from_store_id, to_store_id } = req.body;
+    try {
+        const targetStoreId = to_store_id || (req.user.store_id || 1);
+        const stmt = db.prepare(`
+            INSERT INTO transfer_requests (model_id, from_store_id, to_store_id, requested_by)
+            VALUES (?, ?, ?, ?)
+        `);
+        stmt.run(model_id, from_store_id, targetStoreId, req.user.id);
+        res.json({ success: true, message: 'Solicitud de traslado registrada exitosamente' });
+    } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
 const PORT = process.env.PORT || 3000;

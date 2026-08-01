@@ -376,6 +376,10 @@ function renderPhonesTable(phonesData) {
     const statPhones = document.getElementById('stat-total-phones');
     const statValue = document.getElementById('stat-total-value');
 
+    // Render POS Card Grid (FASE 3)
+    renderPosCards(phonesData);
+    setPosViewMode(posViewMode);
+
     if (phonesData.length === 0) {
         if (statPhones) statPhones.innerText = '0';
         if (statValue) statValue.innerText = '0.00';
@@ -413,6 +417,70 @@ function renderPhonesTable(phonesData) {
 
     if (statPhones) statPhones.innerText = phonesData.length;
     if (statValue) statValue.innerText = totalVal.toLocaleString('en-US', { minimumFractionDigits: 2 });
+}
+
+let posViewMode = 'grid';
+
+function setPosViewMode(mode) {
+    posViewMode = mode;
+    const gridEl = document.getElementById('posCardGrid');
+    const tableEl = document.querySelector('#inventory-tab .table-container');
+    const gridBtn = document.getElementById('viewModeGridBtn');
+    const tableBtn = document.getElementById('viewModeTableBtn');
+
+    if (mode === 'grid') {
+        if (gridEl) gridEl.style.display = 'grid';
+        if (tableEl) tableEl.style.display = 'none';
+        if (gridBtn) gridBtn.classList.add('active');
+        if (tableBtn) tableBtn.classList.remove('active');
+    } else {
+        if (gridEl) gridEl.style.display = 'none';
+        if (tableEl) tableEl.style.display = 'block';
+        if (gridBtn) gridBtn.classList.remove('active');
+        if (tableBtn) tableBtn.classList.add('active');
+    }
+}
+
+function renderPosCards(phonesData) {
+    const grid = document.getElementById('posCardGrid');
+    if (!grid) return;
+
+    if (phonesData.length === 0) {
+        grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:3rem; color:var(--text-muted); font-size:1.1rem;"><i class="fas fa-inbox" style="font-size:2.5rem; display:block; margin-bottom:0.75rem;"></i>No hay equipos disponibles en esta sucursal</div>';
+        return;
+    }
+
+    grid.innerHTML = phonesData.map(p => `
+        <div class="pos-card" id="pos-card-${p.id}">
+            <div class="pos-card-header">
+                <img src="${p.image_url || 'https://via.placeholder.com/150/1f2937/fff?text=' + encodeURIComponent(p.brand_name)}" class="pos-card-img" alt="${p.model_name}">
+                <div class="pos-card-title">
+                    <span style="text-transform:uppercase; font-size:0.75rem; color:var(--primary); font-weight:700;">${p.brand_name}</span>
+                    <h3>${p.model_name}</h3>
+                    <span>${p.ram || 'N/A'} RAM / ${p.storage || 'N/A'} Storage</span>
+                </div>
+            </div>
+            <div class="pos-card-imei">
+                <span><i class="fas fa-barcode" style="color:var(--text-muted); margin-right:0.4rem;"></i> IMEI:</span>
+                <strong style="color:var(--text-main); font-family:monospace;">${p.imei}</strong>
+            </div>
+            <div class="pos-card-pricing">
+                <div>
+                    <div class="pos-card-price-tag">L. ${p.price_cash.toLocaleString('en-US')}</div>
+                    <div class="pos-card-credit-tag">${p.credit_enabled && p.price_credit ? 'Crédito: L. ' + p.price_credit.toLocaleString('en-US') : 'Sin Crédito'}</div>
+                </div>
+                <span class="badge badge-success"><i class="fas fa-store"></i> ${p.store_name}</span>
+            </div>
+            <div class="pos-card-actions">
+                <button class="btn-pos-sell" onclick="openSaleModal(${p.id})">
+                    <i class="fas fa-shopping-cart"></i> VENDER
+                </button>
+                <button class="btn-pos-transfer" onclick="openTransferModal(${p.id})">
+                    <i class="fas fa-truck"></i> TRASLADAR
+                </button>
+            </div>
+        </div>
+    `).join('');
 }
 
 function renderTransfersTable() {
@@ -1503,23 +1571,45 @@ function calculateSale() {
 }
 async function saveSale(e) {
     e.preventDefault();
+    const invoiceInput = document.getElementById('saleInvoiceFile');
+    if (!invoiceInput || !invoiceInput.files || invoiceInput.files.length === 0) {
+        showToast('Requisito Obligatorio: Debe adjuntar la fotografía o comprobante de la factura de venta.', true);
+        return false;
+    }
+
+    const priceType = document.getElementById('salePriceType').value;
+    const primaVal = parseFloat(document.getElementById('salePrima').value) || 0;
+
+    if (priceType === 'Crédito' && primaVal <= 0) {
+        showToast('Requisito Obligatorio: En ventas a Crédito debe registrar la Prima inicial recibida.', true);
+        return false;
+    }
+
     try {
-        const payload = {
-            phone_id: document.getElementById('salePhoneId').value,
-            store_id: document.getElementById('saleStore').value,
-            sale_type: document.getElementById('salePriceType').value === 'Crédito' ? 'Crédito' : 'Contado',
-            price_type: document.getElementById('salePriceType').value,
-            discount: parseFloat(document.getElementById('saleDiscount').value) || 0,
-            prima: parseFloat(document.getElementById('salePrima').value) || 0,
-            notes: document.getElementById('saleNotes').value,
-            sale_date: document.getElementById('saleDate').value
-        };
-        const res = await fetchAuth(`${API_URL}/sales`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const formData = new FormData();
+        formData.append('phone_id', document.getElementById('salePhoneId').value);
+        formData.append('store_id', document.getElementById('saleStore').value);
+        formData.append('sale_type', priceType === 'Crédito' ? 'Crédito' : 'Contado');
+        formData.append('price_type', priceType);
+        formData.append('discount', parseFloat(document.getElementById('saleDiscount').value) || 0);
+        formData.append('prima', primaVal);
+        formData.append('notes', document.getElementById('saleNotes').value || '');
+        formData.append('sale_date', document.getElementById('saleDate').value || '');
+        formData.append('invoice', invoiceInput.files[0]);
+
+        const res = await fetchAuth(`${API_URL}/sales`, {
+            method: 'POST',
+            body: formData
+        });
+
         if (!res.ok) {
             const data = await res.json();
             throw new Error(data.error);
         }
-        showToast('Factura Cerrada Correctamente'); closeModal('saleModal'); await fetchAllData();
+
+        showToast('Factura Cerrada y Venta Registrada con Éxito');
+        closeModal('saleModal');
+        await fetchAllData();
     } catch (err) { showToast(err.message, true); }
     return false;
 }
@@ -2828,4 +2918,145 @@ async function loadRecentSales() {
                 </tr>`).join('');
     } catch(e) { console.error('Recent sales error:', e); }
 }
+
+// ==========================================
+// CAMERA QR/BARCODE SCANNER (FASE 3)
+// ==========================================
+let html5QrCode = null;
+
+function openQrScanner() {
+    openModal('qrScannerModal');
+    setTimeout(() => {
+        if (typeof Html5Qrcode !== 'undefined') {
+            html5QrCode = new Html5Qrcode("reader");
+            html5QrCode.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: { width: 260, height: 160 } },
+                (decodedText) => {
+                    onImeiScanned(decodedText.trim());
+                },
+                (errorMessage) => { /* ignore frame errors */ }
+            ).catch(err => {
+                console.error("Camera scan error:", err);
+                showToast("No se pudo iniciar la cámara del dispositivo: " + err, true);
+            });
+        } else {
+            showToast("Librería de escáner no disponible.", true);
+        }
+    }, 300);
+}
+
+function closeQrScanner() {
+    if (html5QrCode) {
+        html5QrCode.stop().then(() => {
+            html5QrCode.clear();
+            html5QrCode = null;
+        }).catch(err => console.error(err));
+    }
+    closeModal('qrScannerModal');
+}
+
+function onImeiScanned(scannedImei) {
+    closeQrScanner();
+    showToast(`IMEI Escaneado: ${scannedImei}`);
+    
+    // Search in state.phones
+    const targetPhone = state.phones.find(p => p.imei.toLowerCase() === scannedImei.toLowerCase());
+    if (targetPhone) {
+        setPosViewMode('grid');
+        renderPosCards([targetPhone]);
+        const cardEl = document.getElementById(`pos-card-${targetPhone.id}`);
+        if (cardEl) {
+            cardEl.classList.add('highlight-scanned');
+            cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        showToast(`✅ Equipo local detectado: ${targetPhone.brand_name} ${targetPhone.model_name}`);
+    } else {
+        showToast(`⚠️ IMEI ${scannedImei} no encontrado en el inventario local de esta tienda.`, true);
+    }
+}
+
+// ==========================================
+// INTER-STORE SEARCH & TRANSFER REQUESTS (FASE 4)
+// ==========================================
+function openGlobalStoreSearchModal() {
+    const select = document.getElementById('globalSearchModelSelect');
+    if (select) {
+        let modelOptions = '<option value="">-- Seleccionar Modelo del Catálogo --</option>';
+        state.brands.forEach(b => {
+            const mx = state.models.filter(m => m.brand_id === b.id);
+            if (mx.length > 0) {
+                modelOptions += `<optgroup label="${b.name}">`;
+                mx.forEach(m => {
+                    modelOptions += `<option value="${m.id}">${m.name} (${m.ram || ''} / ${m.storage || ''})</option>`;
+                });
+                modelOptions += `</optgroup>`;
+            }
+        });
+        select.innerHTML = modelOptions;
+    }
+    const card = document.getElementById('globalSearchResultCard');
+    if (card) card.style.display = 'none';
+    openModal('globalSearchModal');
+}
+
+async function performGlobalStoreSearch() {
+    const modelId = document.getElementById('globalSearchModelSelect').value;
+    const card = document.getElementById('globalSearchResultCard');
+    const tbody = document.querySelector('#globalStockTable tbody');
+    if (!modelId) {
+        if (card) card.style.display = 'none';
+        return;
+    }
+
+    try {
+        const res = await fetchAuth(`${API_URL}/phones/master-stock?model_id=${modelId}`);
+        if (!res.ok) throw new Error('Error buscando existencias');
+        const rows = await res.json();
+
+        if (card) card.style.display = 'block';
+        if (!tbody) return;
+
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:1rem;">Sin inventario físico en ninguna sucursal</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = rows.map(r => {
+            const isMyStore = currentStoreId && parseInt(currentStoreId) === r.store_id;
+            const hasStock = r.stock_qty > 0;
+            return `
+                <tr style="border-bottom:1px solid var(--border-color);">
+                    <td style="padding:0.75rem 0.5rem; font-weight:600; color:var(--text-main);">
+                        🏬 ${r.store_name} ${isMyStore ? '<span class="badge badge-primary" style="margin-left:0.4rem; font-size:0.7rem;">Mi Tienda</span>' : ''}
+                    </td>
+                    <td style="padding:0.75rem 0.5rem; text-align:center;">
+                        <strong style="font-size:1.1rem; color:${hasStock ? 'var(--success)' : 'var(--danger)'};">${Number(r.stock_qty).toFixed(2)}</strong>
+                    </td>
+                    <td style="padding:0.75rem 0.5rem; text-align:right;">
+                        ${(!isMyStore && hasStock) ? `
+                            <button class="btn btn-secondary" style="padding:0.45rem 0.9rem; font-size:0.82rem; border-radius:8px;" onclick="requestTransfer(${modelId}, ${r.store_id}, '${r.store_name}')">
+                                <i class="fas fa-paper-plane"></i> Solicitar Traslado
+                            </button>
+                        ` : (isMyStore ? '<span style="color:var(--text-muted); font-size:0.8rem;">En Tienda</span>' : '<span style="color:var(--text-muted); font-size:0.8rem;">Sin Stock</span>')}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (err) { showToast(err.message, true); }
+}
+
+async function requestTransfer(modelId, fromStoreId, fromStoreName) {
+    try {
+        const res = await fetchAuth(`${API_URL}/transfer-requests`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_id: modelId, from_store_id: fromStoreId })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showToast(`🚀 Solicitud de traslado enviada a ${fromStoreName}`);
+    } catch (err) { showToast(err.message, true); }
+}
+
 
