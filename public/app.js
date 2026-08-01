@@ -128,7 +128,8 @@ function switchTab(tabId) {
     }
 
     if (window.innerWidth <= 820) toggleSidebar();
-    if (tabId === 'transfers-tab') { applyTransferFilters(); document.getElementById('transfersImeiSearch').focus(); }
+    if (tabId === 'dashboard-tab') { loadDashboard(); }
+    else if (tabId === 'transfers-tab') { applyTransferFilters(); document.getElementById('transfersImeiSearch').focus(); }
     else if (tabId === 'sales-tab') { fetchSales(); document.getElementById('salesImeiSearch').focus(); }
     else if (tabId === 'warranties-tab') { fetchWarranties(); document.getElementById('warrantiesSearch').focus(); }
     else if (tabId === 'liquidations-tab') { fetchLiquidations(); document.getElementById('liquidationsImeiSearch').focus(); }
@@ -2522,3 +2523,206 @@ async function executeReset() {
         btn.style.opacity = '1';
     }
 }
+
+// ==========================================
+// DASHBOARD MODULE — ADMIN ONLY
+// ==========================================
+let _chartSalesTrend = null;
+let _chartTopModels  = null;
+
+const DASH_COLORS = ['#3b82f6','#10b981','#8b5cf6','#f59e0b','#ef4444','#06b6d4'];
+
+function fmtLPS(n) {
+    if (!n && n !== 0) return 'L 0.00';
+    return 'L ' + Number(n).toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function loadDashboard() {
+    const btn = document.getElementById('dashRefreshBtn');
+    if (btn) { btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Cargando...'; btn.disabled = true; }
+    try {
+        await Promise.all([
+            loadDashboardSummary(),
+            loadDashboardCharts(),
+            loadLowStock(),
+            loadRecentSales()
+        ]);
+    } catch(e) { console.error('Dashboard error:', e); }
+    if (btn) { btn.innerHTML = '<i class="fas fa-sync-alt"></i> Actualizar'; btn.disabled = false; }
+}
+
+async function loadDashboardSummary() {
+    try {
+        const res = await fetchAuth(`${API_URL}/dashboard/summary`);
+        if (!res.ok) return;
+        const d = await res.json();
+
+        // Ventas Hoy
+        document.getElementById('kpiSalesTodayTotal').textContent = fmtLPS(d.salesToday?.total);
+        document.getElementById('kpiSalesTodayQty').textContent   = `${d.salesToday?.qty || 0} equipo(s)`;
+
+        // Ventas Mes
+        document.getElementById('kpiSalesMonthTotal').textContent = fmtLPS(d.salesMonth?.total);
+        document.getElementById('kpiSalesMonthQty').textContent   = `${d.salesMonth?.qty || 0} equipo(s)`;
+
+        // Stock
+        document.getElementById('kpiStockQty').textContent   = `${d.stock?.qty || 0} equipo(s)`;
+        document.getElementById('kpiStockValue').textContent = `Valor: ${fmtLPS(d.stock?.value)}`;
+
+        // Liquidaciones
+        document.getElementById('kpiLiqPendiente').textContent = fmtLPS(d.liquidaciones?.pendiente);
+        document.getElementById('kpiLiqQty').textContent       = `${d.liquidaciones?.qty || 0} activo(s)`;
+
+        // En Revisión
+        const revQty = d.enRevision?.qty || 0;
+        document.getElementById('kpiRevisionQty').textContent = String(revQty);
+        const revCard = document.getElementById('kpiRevisionCard');
+        if (revCard) revCard.style.opacity = revQty > 0 ? '1' : '0.5';
+
+        // Top Tienda
+        if (d.topStore) {
+            document.getElementById('kpiTopStoreName').textContent  = d.topStore.name;
+            document.getElementById('kpiTopStoreTotal').textContent = `${fmtLPS(d.topStore.total)} · ${d.topStore.qty} ventas`;
+        }
+    } catch(e) { console.error('Summary error:', e); }
+}
+
+async function loadDashboardCharts() {
+    const days = parseInt(document.getElementById('dashChartDays')?.value || 30);
+    try {
+        // Sales Trend Chart
+        const trendRes = await fetchAuth(`${API_URL}/dashboard/sales-chart?days=${days}`);
+        const trendData = trendRes.ok ? await trendRes.json() : [];
+
+        const labels   = trendData.map(r => r.day.slice(5));  // MM-DD
+        const amounts  = trendData.map(r => r.total);
+        const qtys     = trendData.map(r => r.qty);
+
+        const trendCtx = document.getElementById('salesTrendChart');
+        if (trendCtx) {
+            if (_chartSalesTrend) _chartSalesTrend.destroy();
+            _chartSalesTrend = new Chart(trendCtx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Ventas (L)',
+                        data: amounts,
+                        backgroundColor: 'rgba(59,130,246,0.25)',
+                        borderColor: '#3b82f6',
+                        borderWidth: 2,
+                        borderRadius: 4,
+                        yAxisID: 'y'
+                    }, {
+                        label: 'Equipos',
+                        data: qtys,
+                        type: 'line',
+                        borderColor: '#10b981',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        yAxisID: 'y1'
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#9ca3af', font: { size: 11 } } } },
+                    scales: {
+                        x: { ticks: { color: '#9ca3af', maxRotation: 45, font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        y:  { ticks: { color: '#9ca3af', callback: v => 'L'+v.toLocaleString() }, grid: { color: 'rgba(255,255,255,0.05)' }, position: 'left' },
+                        y1: { ticks: { color: '#10b981' }, grid: { display: false }, position: 'right' }
+                    }
+                }
+            });
+        }
+
+        // Top Models Doughnut
+        const modRes  = await fetchAuth(`${API_URL}/dashboard/top-models`);
+        const modData = modRes.ok ? await modRes.json() : [];
+
+        const modCtx = document.getElementById('topModelsChart');
+        if (modCtx) {
+            if (_chartTopModels) _chartTopModels.destroy();
+            if (modData.length === 0) {
+                modCtx.style.display = 'none';
+                document.getElementById('topModelsLegend').innerHTML = '<li style="color:var(--text-muted);font-size:0.85rem;">Sin datos aún</li>';
+            } else {
+                modCtx.style.display = '';
+                _chartTopModels = new Chart(modCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: modData.map(m => `${m.brand} ${m.model}`),
+                        datasets: [{ data: modData.map(m => m.qty), backgroundColor: DASH_COLORS, borderWidth: 0, hoverOffset: 8 }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false, cutout: '65%',
+                        plugins: { legend: { display: false } }
+                    }
+                });
+                const legend = document.getElementById('topModelsLegend');
+                legend.innerHTML = modData.map((m, i) => `
+                    <li>
+                        <span class="legend-dot" style="background:${DASH_COLORS[i]}"></span>
+                        ${m.brand} ${m.model} — <strong style="color:var(--text-main)">${m.qty}</strong> uds.
+                    </li>`).join('');
+            }
+        }
+    } catch(e) { console.error('Charts error:', e); }
+}
+
+async function loadLowStock() {
+    try {
+        const res = await fetchAuth(`${API_URL}/dashboard/low-stock?threshold=5`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const badge = document.getElementById('lowStockBadge');
+        if (badge) {
+            badge.textContent = data.length;
+            badge.classList.toggle('badge-pulse', data.length > 0);
+        }
+
+        const tbody = document.querySelector('#lowStockTable tbody');
+        if (!tbody) return;
+        tbody.innerHTML = data.length === 0
+            ? '<tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:1rem;">✅ Sin alertas de stock bajo</td></tr>'
+            : data.map(r => `
+                <tr>
+                    <td data-label="Modelo">
+                        <div style="font-weight:600">${r.brand} ${r.model}</div>
+                    </td>
+                    <td data-label="Unidades" class="text-center">
+                        <span class="badge ${r.qty === 0 ? 'badge-danger' : 'badge-warning'}">${r.qty}</span>
+                    </td>
+                    <td data-label="Precio" class="text-right">${fmtLPS(r.price_cash)}</td>
+                </tr>`).join('');
+    } catch(e) { console.error('Low stock error:', e); }
+}
+
+async function loadRecentSales() {
+    try {
+        const res = await fetchAuth(`${API_URL}/dashboard/recent-sales`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const tbody = document.querySelector('#recentSalesTable tbody');
+        if (!tbody) return;
+        tbody.innerHTML = data.length === 0
+            ? '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:1rem;">Sin ventas registradas aún</td></tr>'
+            : data.map(s => `
+                <tr>
+                    <td data-label="Fecha" style="font-size:0.82rem;white-space:nowrap;">${formatDate(s.sale_date)}</td>
+                    <td data-label="Equipo">
+                        <div style="font-weight:600;font-size:0.88rem;">${s.brand} ${s.model}</div>
+                        <small style="color:var(--text-muted);font-family:monospace;">${s.imei}</small>
+                    </td>
+                    <td data-label="Tienda"><span class="badge badge-primary">${s.store_name}</span></td>
+                    <td data-label="Precio" class="text-right">
+                        <div style="font-weight:700;color:var(--success)">${fmtLPS(s.final_price)}</div>
+                        <small style="color:var(--text-muted)">${s.sale_type}</small>
+                    </td>
+                </tr>`).join('');
+    } catch(e) { console.error('Recent sales error:', e); }
+}
+

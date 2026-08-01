@@ -12,7 +12,8 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <link rel="stylesheet" href="style.css?v=3">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="style.css?v=4">
 </head>
 
 <body>
@@ -46,6 +47,19 @@
 
         <!-- ACCORDION NAV -->
         <nav class="accordion-nav" id="accordionNav">
+
+            <!-- ═══ 📊 DASHBOARD ═══ -->
+            <div class="acc-group" data-group="dashboard" data-admin="true">
+                <button class="acc-header" onclick="toggleAccordion('dashboard')">
+                    <span><i class="fas fa-chart-line acc-icon"></i> Dashboard</span>
+                    <i class="fas fa-chevron-down acc-arrow"></i>
+                </button>
+                <ul class="acc-menu">
+                    <li data-tab="dashboard-tab" onclick="switchTab('dashboard-tab')">
+                        <i class="fas fa-tachometer-alt"></i> Panel de Control
+                    </li>
+                </ul>
+            </div>
 
             <!-- ═══ 📦 INVENTARIO ═══ -->
             <div class="acc-group" data-group="inventario">
@@ -163,6 +177,137 @@
                     src="assets/images/branding/logo_solucels.png" alt="Logo"
                     style="max-height: 36px; max-width: 100%; width: auto; object-fit: contain;"><span
                     style="color: #fff;">Solucels Control</span></div>
+        </div>
+
+        <!-- DASHBOARD TAB -->
+        <div id="dashboard-tab" class="tab-content">
+            <header>
+                <div>
+                    <h1><i class="fas fa-chart-line" style="color:var(--primary);"></i> Panel de Control</h1>
+                    <p class="subtitle">Métricas y resumen operacional en tiempo real</p>
+                </div>
+                <div style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+                    <select id="dashChartDays" onchange="loadDashboardCharts()" style="padding:0.5rem 0.75rem; border-radius:var(--radius-sm); background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-main); font-size:0.85rem;">
+                        <option value="7">Últimos 7 días</option>
+                        <option value="30" selected>Últimos 30 días</option>
+                    </select>
+                    <button class="btn btn-secondary" onclick="loadDashboard()" id="dashRefreshBtn">
+                        <i class="fas fa-sync-alt"></i> Actualizar
+                    </button>
+                </div>
+            </header>
+
+            <!-- KPI CARDS -->
+            <div class="dash-kpi-grid">
+                <div class="dash-kpi-card kpi-blue">
+                    <div class="kpi-icon"><i class="fas fa-sun"></i></div>
+                    <div class="kpi-body">
+                        <span class="kpi-label">Ventas Hoy</span>
+                        <span class="kpi-value" id="kpiSalesTodayTotal">L 0.00</span>
+                        <span class="kpi-sub" id="kpiSalesTodayQty">0 equipos</span>
+                    </div>
+                </div>
+                <div class="dash-kpi-card kpi-green">
+                    <div class="kpi-icon"><i class="fas fa-calendar-check"></i></div>
+                    <div class="kpi-body">
+                        <span class="kpi-label">Ventas del Mes</span>
+                        <span class="kpi-value" id="kpiSalesMonthTotal">L 0.00</span>
+                        <span class="kpi-sub" id="kpiSalesMonthQty">0 equipos</span>
+                    </div>
+                </div>
+                <div class="dash-kpi-card kpi-purple">
+                    <div class="kpi-icon"><i class="fas fa-mobile-alt"></i></div>
+                    <div class="kpi-body">
+                        <span class="kpi-label">Stock Disponible</span>
+                        <span class="kpi-value" id="kpiStockQty">0 equipos</span>
+                        <span class="kpi-sub" id="kpiStockValue">Valor: L 0.00</span>
+                    </div>
+                </div>
+                <div class="dash-kpi-card kpi-orange">
+                    <div class="kpi-icon"><i class="fas fa-hand-holding-usd"></i></div>
+                    <div class="kpi-body">
+                        <span class="kpi-label">Créditos Pendientes</span>
+                        <span class="kpi-value" id="kpiLiqPendiente">L 0.00</span>
+                        <span class="kpi-sub" id="kpiLiqQty">0 activos</span>
+                    </div>
+                </div>
+                <div class="dash-kpi-card kpi-red" id="kpiRevisionCard">
+                    <div class="kpi-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    <div class="kpi-body">
+                        <span class="kpi-label">En Revisión</span>
+                        <span class="kpi-value" id="kpiRevisionQty">0</span>
+                        <span class="kpi-sub">equipos bloqueados</span>
+                    </div>
+                </div>
+                <div class="dash-kpi-card kpi-teal" id="kpiTopStoreCard">
+                    <div class="kpi-icon"><i class="fas fa-store"></i></div>
+                    <div class="kpi-body">
+                        <span class="kpi-label">Mejor Tienda (Mes)</span>
+                        <span class="kpi-value" id="kpiTopStoreName" style="font-size:1rem;">—</span>
+                        <span class="kpi-sub" id="kpiTopStoreTotal">L 0.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CHARTS ROW -->
+            <div class="dash-charts-row">
+                <div class="dash-chart-card" style="flex:2;">
+                    <div class="dash-chart-header">
+                        <h3><i class="fas fa-chart-bar"></i> Tendencia de Ventas</h3>
+                    </div>
+                    <div style="position:relative; height:250px;">
+                        <canvas id="salesTrendChart"></canvas>
+                    </div>
+                </div>
+                <div class="dash-chart-card" style="flex:1;">
+                    <div class="dash-chart-header">
+                        <h3><i class="fas fa-chart-pie"></i> Top 5 Modelos</h3>
+                    </div>
+                    <div style="position:relative; height:220px; display:flex; align-items:center; justify-content:center;">
+                        <canvas id="topModelsChart"></canvas>
+                    </div>
+                    <ul class="top-models-legend" id="topModelsLegend"></ul>
+                </div>
+            </div>
+
+            <!-- BOTTOM ROW: Low Stock + Recent Sales -->
+            <div class="dash-bottom-row">
+                <!-- LOW STOCK ALERTS -->
+                <div class="dash-card">
+                    <div class="dash-chart-header">
+                        <h3><i class="fas fa-exclamation-circle" style="color:#f59e0b;"></i> Alertas de Stock Bajo</h3>
+                        <span class="badge badge-warning" id="lowStockBadge">0</span>
+                    </div>
+                    <div class="table-container" style="margin-top:0.75rem;">
+                        <table id="lowStockTable">
+                            <thead><tr>
+                                <th>Modelo</th>
+                                <th class="text-center">Unidades</th>
+                                <th class="text-right">Precio</th>
+                            </tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- RECENT SALES -->
+                <div class="dash-card">
+                    <div class="dash-chart-header">
+                        <h3><i class="fas fa-receipt"></i> Últimas Ventas</h3>
+                    </div>
+                    <div class="table-container" style="margin-top:0.75rem;">
+                        <table id="recentSalesTable">
+                            <thead><tr>
+                                <th>Fecha</th>
+                                <th>Equipo</th>
+                                <th>Tienda</th>
+                                <th class="text-right">Precio</th>
+                            </tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- 1. INVENTORY -->
