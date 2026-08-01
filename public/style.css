@@ -505,3 +505,62 @@ option:hover, option:focus, option:active, option:checked {
     z-index: 10;
     position: relative;
 }
+
+/* =========================================================
+   DANGER ZONE (Reset Panel)
+   ========================================================= */
+.danger-zone-panel {
+    border: 1.5px solid rgba(239, 68, 68, 0.35) !important;
+    background: rgba(239, 68, 68, 0.05) !important;
+    margin-top: 0.5rem;
+}
+
+.danger-zone-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    background: rgba(239, 68, 68, 0.07);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: var(--radius-sm);
+    padding: 1rem 1.25rem;
+}
+
+.btn-danger-outline {
+    background: transparent;
+    border: 1.5px solid var(--danger);
+    color: var(--danger);
+    font-weight: 600;
+    padding: 0.6rem 1.1rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: background 0.2s, color 0.2s;
+    white-space: nowrap;
+    min-height: 44px;
+}
+.btn-danger-outline:hover {
+    background: var(--danger);
+    color: #fff;
+}
+
+.reset-result-success {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid var(--success);
+    border-radius: var(--radius-sm);
+    padding: 1rem;
+    color: var(--success);
+    font-size: 0.9rem;
+}
+.reset-result-error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid var(--danger);
+    border-radius: var(--radius-sm);
+    padding: 1rem;
+    color: var(--danger);
+    font-size: 0.9rem;
+}

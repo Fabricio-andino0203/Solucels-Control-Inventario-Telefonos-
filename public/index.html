@@ -660,6 +660,55 @@
                             <tbody></tbody>
                         </table>
                     </div>
+                <div class="config-panel full-width danger-zone-panel">
+                    <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1rem;">
+                        <i class="fas fa-exclamation-triangle" style="font-size:1.5rem; color:var(--danger);"></i>
+                        <div>
+                            <h3 style="color:var(--danger); margin:0;">Zona de Peligro</h3>
+                            <p style="color:var(--text-muted); font-size:0.85rem; margin:0;">Acciones irreversibles sobre la base de datos de producción.</p>
+                        </div>
+                    </div>
+                    <div class="danger-zone-card">
+                        <div>
+                            <strong style="color:var(--text-main);">Resetear Inventario Operacional</strong>
+                            <p style="color:var(--text-muted); font-size:0.85rem; margin:0.25rem 0 0;">Vacía todo el stock, ventas, traslados, auditorías y garantías. Conserva el Catálogo Maestro, tiendas y usuarios.</p>
+                        </div>
+                        <button class="btn btn-danger-outline" onclick="openResetModal()">
+                            <i class="fas fa-trash-alt"></i> Resetear Base de Datos
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RESET CONFIRM MODAL -->
+        <div id="resetModal" class="modal-overlay">
+            <div class="modal" style="max-width:480px;">
+                <div class="modal-header" style="border-bottom:1px solid var(--danger)22;">
+                    <h2 style="color:var(--danger);"><i class="fas fa-exclamation-triangle"></i> Confirmar Reseteo</h2>
+                    <button class="close-btn" onclick="closeModal('resetModal')"><i class="fas fa-times"></i></button>
+                </div>
+                <div style="padding:1.5rem 0;">
+                    <div class="form-info-box" style="background:rgba(239,68,68,0.1); border-color:var(--danger); margin-bottom:1.5rem;">
+                        <i class="fas fa-exclamation-circle" style="color:var(--danger);"></i>
+                        <div>
+                            <strong style="color:var(--danger);">¡Esta acción NO se puede deshacer!</strong>
+                            <p style="margin:0.25rem 0 0; font-size:0.85rem; color:var(--text-muted);">Se eliminarán permanentemente: todos los equipos en stock, historial de ventas, traslados, auditorías y garantías.</p>
+                        </div>
+                    </div>
+                    <p style="margin-bottom:0.5rem; font-size:0.9rem; color:var(--text-muted);">Escribe <strong style="color:var(--text-main); font-family:monospace;">CONFIRMAR</strong> para continuar:</p>
+                    <input type="text" id="resetConfirmInput" placeholder="Escribe CONFIRMAR aquí" 
+                        style="width:100%; padding:0.75rem; border-radius:var(--radius-sm); border:2px solid var(--border-color); background:var(--bg-color); color:var(--text-main); font-size:1rem;"
+                        oninput="checkResetInput()">
+                    <div id="resetResult" style="display:none; margin-top:1rem;"></div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" onclick="closeModal('resetModal')">Cancelar</button>
+                    <button id="resetConfirmBtn" class="btn" 
+                        style="background:var(--danger); color:white; opacity:0.4; cursor:not-allowed;" 
+                        onclick="executeReset()" disabled>
+                        <i class="fas fa-trash-alt"></i> Ejecutar Reseteo
+                    </button>
                 </div>
             </div>
         </div>

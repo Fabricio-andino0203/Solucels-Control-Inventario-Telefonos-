@@ -2440,3 +2440,77 @@ function viewImage(url) {
     img.src = url;
     openModal('lightboxModal');
 }
+
+// ==========================================
+// DB RESET — DANGER ZONE
+// ==========================================
+function openResetModal() {
+    const input = document.getElementById('resetConfirmInput');
+    const btn = document.getElementById('resetConfirmBtn');
+    const result = document.getElementById('resetResult');
+    if (input) input.value = '';
+    if (result) { result.style.display = 'none'; result.innerHTML = ''; }
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.4'; btn.style.cursor = 'not-allowed'; }
+    openModal('resetModal');
+    setTimeout(() => input && input.focus(), 300);
+}
+
+function checkResetInput() {
+    const input = document.getElementById('resetConfirmInput');
+    const btn = document.getElementById('resetConfirmBtn');
+    if (!input || !btn) return;
+    const isValid = input.value.trim() === 'CONFIRMAR';
+    btn.disabled = !isValid;
+    btn.style.opacity = isValid ? '1' : '0.4';
+    btn.style.cursor = isValid ? 'pointer' : 'not-allowed';
+    input.style.borderColor = input.value.length > 0 
+        ? (isValid ? 'var(--success)' : 'var(--danger)') 
+        : 'var(--border-color)';
+}
+
+async function executeReset() {
+    const btn = document.getElementById('resetConfirmBtn');
+    const result = document.getElementById('resetResult');
+    if (!btn || btn.disabled) return;
+
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ejecutando...';
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+
+    try {
+        const res = await fetchAuth(`${API_URL}/admin/reset-data`, { method: 'POST' });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || 'Error desconocido');
+
+        result.style.display = 'block';
+        result.className = 'reset-result-success';
+        result.innerHTML = `
+            <strong><i class="fas fa-check-circle"></i> ¡Reseteo completado exitosamente!</strong>
+            <div style="margin-top:0.75rem; display:grid; grid-template-columns:1fr 1fr; gap:0.4rem; font-size:0.82rem;">
+                <span>📦 Equipos en stock:</span><strong>${data.summary.phones}</strong>
+                <span>💰 Ventas:</span><strong>${data.summary.sales}</strong>
+                <span>🔄 Traslados:</span><strong>${data.summary.transfers}</strong>
+                <span>📋 Auditorías:</span><strong>${data.summary.audits}</strong>
+                <span>🏷️ Garantías:</span><strong>${data.summary.warranties}</strong>
+                <span>📚 Catálogo Maestro:</span><strong>${data.summary.phone_models} modelos ✓</strong>
+            </div>`;
+
+        // Reset local state
+        state.phones = []; state.sales = []; state.transfers = [];
+        renderInventoryTable(); renderSalesTable();
+        showToast('Base de datos reseteada correctamente. Catálogo Maestro conservado.');
+
+        // Auto-close modal after 4 seconds
+        setTimeout(() => closeModal('resetModal'), 4500);
+
+    } catch (err) {
+        result.style.display = 'block';
+        result.className = 'reset-result-error';
+        result.innerHTML = `<strong><i class="fas fa-times-circle"></i> Error:</strong> ${err.message}`;
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+        btn.style.opacity = '1';
+    }
+}
