@@ -138,11 +138,19 @@ async function fetchAuth(url, options = {}) {
 async function fetchAllData() { await Promise.all([fetchConfig(), fetchInventory()]); fetchTransfers(); fetchSales(); fetchLiquidations(); if (currentRole === 'admin') fetchUsers(); }
 function switchTab(tabId) {
     console.log('🚀 [FRONTEND ROUTER] Ejecutando switchTab para pestaña:', tabId);
+    
+    // Ensure role resolution from localStorage if logged in
+    const storedRole = localStorage.getItem('slc_role');
+    const storedUser = localStorage.getItem('slc_user');
+    if (storedRole) currentRole = storedRole;
+    else if (storedUser === 'admin') currentRole = 'admin';
+
     const isAdmin = currentRole === 'admin';
     const adminTabs = ['dashboard-tab', 'bulk-tab', 'config-tab', 'liquidations-tab', 'liquidations-history-tab', 'promotions-tab', 'audit-tab', 'audit-history-tab', 'revision-tab', 'users-tab'];
 
     // Block Vendedor from accessing admin tabs
     if (!isAdmin && adminTabs.includes(tabId)) {
+        console.warn('⚠️ [FRONTEND ROUTER] Bloqueado acceso a adminTab por rol:', currentRole);
         showToast('Acceso denegado. Función exclusiva para administradores.', true);
         tabId = 'inventory-tab';
     }
@@ -173,7 +181,7 @@ function switchTab(tabId) {
     if (activeItem) {
         activeItem.classList.add('active');
         const parentGroup = activeItem.closest('.acc-group');
-        if (parentGroup && !parentGroup.classList.contains('open')) {
+        if (parentGroup) {
             document.querySelectorAll('.acc-group.open').forEach(g => g.classList.remove('open'));
             parentGroup.classList.add('open');
         }
@@ -190,7 +198,10 @@ function switchTab(tabId) {
     else if (tabId === 'audit-tab') { document.getElementById('auditImeiSearch')?.focus(); }
     else if (tabId === 'audit-history-tab') { fetchAuditHistory(); }
     else if (tabId === 'revision-tab') { fetchRevisionPhones(); }
-    else if (tabId === 'users-tab') fetchUsers();
+    else if (tabId === 'users-tab') {
+        console.log('👉 [FRONTEND ROUTER] Entrando a users-tab (HOLA MUNDO TEST)...');
+        fetchUsers();
+    }
     else if (tabId === 'inventory-tab') { fetchAllData(); }
 }
 
