@@ -634,3 +634,140 @@ option:hover, option:focus, option:active, option:checked {
     color: var(--danger);
     font-size: 0.9rem;
 }
+
+/* =========================================================
+   DASHBOARD — KPI & CHARTS
+   ========================================================= */
+
+/* KPI Grid */
+.dash-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+@media (max-width: 1024px) { .dash-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px)  { .dash-kpi-grid { grid-template-columns: 1fr; } }
+
+.dash-kpi-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.dash-kpi-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
+.dash-kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 4px; height: 100%;
+    border-radius: 4px 0 0 4px;
+}
+.kpi-blue::before   { background: #3b82f6; }
+.kpi-green::before  { background: #10b981; }
+.kpi-purple::before { background: #8b5cf6; }
+.kpi-orange::before { background: #f59e0b; }
+.kpi-red::before    { background: #ef4444; }
+.kpi-teal::before   { background: #06b6d4; }
+
+.kpi-icon {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.3rem;
+    flex-shrink: 0;
+}
+.kpi-blue .kpi-icon   { background: rgba(59,130,246,0.15); color: #60a5fa; }
+.kpi-green .kpi-icon  { background: rgba(16,185,129,0.15); color: #34d399; }
+.kpi-purple .kpi-icon { background: rgba(139,92,246,0.15); color: #a78bfa; }
+.kpi-orange .kpi-icon { background: rgba(245,158,11,0.15); color: #fbbf24; }
+.kpi-red .kpi-icon    { background: rgba(239,68,68,0.15);  color: #f87171; }
+.kpi-teal .kpi-icon   { background: rgba(6,182,212,0.15);  color: #22d3ee; }
+
+.kpi-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.kpi-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.kpi-value { font-size: 1.45rem; font-weight: 700; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-sub   { font-size: 0.78rem; color: var(--text-muted); }
+
+/* Charts Row */
+.dash-charts-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+.dash-chart-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1.25rem 1.5rem;
+    min-width: 0;
+}
+@media (max-width: 1024px) {
+    .dash-charts-row { flex-direction: column; }
+    .dash-chart-card { flex: 1 !important; }
+}
+
+.dash-chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+.dash-chart-header h3 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Bottom Row */
+.dash-bottom-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+@media (max-width: 1024px) { .dash-bottom-row { grid-template-columns: 1fr; } }
+
+.dash-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1.25rem 1.5rem;
+}
+
+/* Top Models Legend */
+.top-models-legend {
+    list-style: none;
+    margin-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.top-models-legend li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+.top-models-legend .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* Stock badge pulse when > 0 */
+@keyframes pulse-warn {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.4); }
+    50%       { box-shadow: 0 0 0 6px rgba(245,158,11,0); }
+}
+.badge-pulse { animation: pulse-warn 1.8s infinite; }

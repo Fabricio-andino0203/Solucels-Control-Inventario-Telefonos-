@@ -340,8 +340,131 @@ app.post('/api/admin/reset-data', requireAdmin, (req, res) => {
 });
 
 // ==========================================
+// DASHBOARD — ADMIN ONLY
+// ==========================================
+
+// KPI Summary: ventas hoy/mes, stock, liquidaciones activas
+app.get('/api/dashboard/summary', requireAdmin, (req, res) => {
+    try {
+        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        const monthStart = today.slice(0, 7) + '-01';       // YYYY-MM-01
+
+        const salesToday = db.prepare(`
+            SELECT COUNT(*) as qty, COALESCE(SUM(final_price),0) as total
+            FROM sales WHERE date(sale_date) = date(?)
+        `).get(today);
+
+        const salesMonth = db.prepare(`
+            SELECT COUNT(*) as qty, COALESCE(SUM(final_price),0) as total
+            FROM sales WHERE sale_date >= ?
+        `).get(monthStart);
+
+        const stock = db.prepare(`
+            SELECT COUNT(*) as qty,
+                   COALESCE(SUM(m.price_cash), 0) as value
+            FROM phones p
+            JOIN phone_models m ON p.model_id = m.id
+            WHERE p.status = 'Disponible'
+        `).get();
+
+        const enRevision = db.prepare(`
+            SELECT COUNT(*) as qty FROM phones WHERE status = 'En Revisión'
+        `).get();
+
+        const liquidaciones = db.prepare(`
+            SELECT COUNT(*) as qty, COALESCE(SUM(saldo), 0) as pendiente
+            FROM sales WHERE sale_type IN ('Crédito','credito') AND payment_status != 'Pagado'
+        `).get();
+
+        const topStore = db.prepare(`
+            SELECT st.name, COUNT(s.id) as qty, COALESCE(SUM(s.final_price),0) as total
+            FROM sales s JOIN stores st ON s.store_id = st.id
+            WHERE s.sale_date >= ?
+            GROUP BY st.id ORDER BY total DESC LIMIT 1
+        `).get(monthStart);
+
+        res.json({ salesToday, salesMonth, stock, enRevision, liquidaciones, topStore: topStore || null });
+    } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Sales chart: últimos 30 días agrupados por fecha
+app.get('/api/dashboard/sales-chart', requireAdmin, (req, res) => {
+    try {
+        const days = parseInt(req.query.days) || 30;
+        const rows = db.prepare(`
+            SELECT date(sale_date) as day,
+                   COUNT(*) as qty,
+                   COALESCE(SUM(final_price), 0) as total
+            FROM sales
+            WHERE sale_date >= date('now', '-' || ? || ' days', 'localtime')
+            GROUP BY day ORDER BY day ASC
+        `).all(days);
+        res.json(rows);
+    } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Top 5 modelos más vendidos
+app.get('/api/dashboard/top-models', requireAdmin, (req, res) => {
+    try {
+        const rows = db.prepare(`
+            SELECT b.name as brand, m.name as model,
+                   COUNT(s.id) as qty,
+                   COALESCE(SUM(s.final_price), 0) as revenue
+            FROM sales s
+            JOIN phones p ON s.phone_id = p.id
+            JOIN phone_models m ON p.model_id = m.id
+            JOIN brands b ON m.brand_id = b.id
+            GROUP BY p.model_id
+            ORDER BY qty DESC LIMIT 5
+        `).all();
+        res.json(rows);
+    } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Stock bajo: modelos con ≤ 3 unidades disponibles
+app.get('/api/dashboard/low-stock', requireAdmin, (req, res) => {
+    try {
+        const threshold = parseInt(req.query.threshold) || 3;
+        const rows = db.prepare(`
+            SELECT b.name as brand, m.name as model, m.price_cash,
+                   COUNT(p.id) as qty
+            FROM phone_models m
+            JOIN brands b ON m.brand_id = b.id
+            LEFT JOIN phones p ON p.model_id = m.id AND p.status = 'Disponible'
+            GROUP BY m.id
+            HAVING qty <= ?
+            ORDER BY qty ASC, b.name ASC
+            LIMIT 10
+        `).all(threshold);
+        res.json(rows);
+    } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Últimas 10 ventas
+app.get('/api/dashboard/recent-sales', requireAdmin, (req, res) => {
+    try {
+        const rows = db.prepare(`
+            SELECT s.id, s.sale_date, s.final_price, s.sale_type, s.payment_status,
+                   s.client_name,
+                   b.name as brand, m.name as model,
+                   p.imei, st.name as store_name,
+                   u.username as sold_by
+            FROM sales s
+            JOIN phones p ON s.phone_id = p.id
+            JOIN phone_models m ON p.model_id = m.id
+            JOIN brands b ON m.brand_id = b.id
+            JOIN stores st ON s.store_id = st.id
+            LEFT JOIN users u ON s.sold_by = u.id
+            ORDER BY s.sale_date DESC LIMIT 10
+        `).all();
+        res.json(rows);
+    } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// ==========================================
 // USERS & SECURITY
 // ==========================================
+
 app.get('/api/users', requireAdmin, (req, res) => {
     try {
         res.json(db.prepare('SELECT id, username, role FROM users').all());
