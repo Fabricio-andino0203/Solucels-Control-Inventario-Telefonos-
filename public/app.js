@@ -155,16 +155,18 @@ function switchTab(tabId) {
         tabId = 'inventory-tab';
     }
 
-    // Activate tab content (con sobrescritura de estilo inline para garantizar visibilidad)
+    // Activate tab content (con soporte para d-none / d-block / active)
     document.querySelectorAll('.tab-content').forEach(el => {
-        el.classList.remove('active');
+        el.classList.remove('active', 'd-block');
+        el.classList.add('d-none');
         el.style.display = 'none';
     });
     const tabEl = document.getElementById(tabId);
     if (tabEl) {
-        tabEl.classList.add('active');
+        tabEl.classList.remove('d-none');
+        tabEl.classList.add('active', 'd-block');
         tabEl.style.display = 'block';
-        console.log('✅ [FRONTEND ROUTER] Tab activado exitosamente en el DOM con display:block:', tabId);
+        console.log('✅ [FRONTEND ROUTER] Tab activado exitosamente en el DOM:', tabId);
     } else {
         console.error('❌ [FRONTEND ROUTER] No se encontró el elemento con ID:', tabId);
     }
@@ -1415,14 +1417,32 @@ function toggleUserStoreField() {
 // ==========================================
 
 function renderUsersTable() {
-    const wrapper = document.getElementById('usersTableWrapper');
-    if (!wrapper) return;
+    const usersTab = document.getElementById('users-tab');
+    if (!usersTab) {
+        console.error('❌ [FRONTEND ERROR] No se encontró el elemento #users-tab en el DOM');
+        return;
+    }
 
     if (!Array.isArray(state.users)) state.users = [];
 
+    const headerHTML = `
+        <div class="pos-action-bar mb-4" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; background:var(--card-bg); padding:1.5rem; border-radius:var(--radius-md); border:1px solid var(--border-color);">
+            <div>
+                <h2 style="margin:0; font-size:1.6rem; display:flex; align-items:center; gap:0.6rem; color:var(--text-main);">
+                    <i class="fas fa-users-cog" style="color:var(--primary);"></i> Gestión de Usuarios
+                </h2>
+                <p style="margin:0.25rem 0 0 0; color:var(--text-muted); font-size:0.88rem;">Administra credenciales, roles y asignación de sucursales del personal</p>
+            </div>
+            <button id="btn-create-user" type="button" class="btn btn-primary" onclick="openUserModal()" style="padding:0.75rem 1.4rem; font-size:0.95rem; border-radius:10px; font-weight:600; display:flex; align-items:center; gap:0.5rem; box-shadow: 0 4px 12px rgba(37,99,235,0.3);">
+                <i class="fas fa-user-plus"></i> Crear Nuevo Usuario
+            </button>
+        </div>
+    `;
+
     if (state.users.length === 0) {
-        wrapper.innerHTML = `
-            <div style="text-align:center; padding:3.5rem 1.5rem; background:rgba(255,255,255,0.02); border-radius:var(--radius-md);">
+        usersTab.innerHTML = `
+            ${headerHTML}
+            <div style="background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border-color); padding:3.5rem 1.5rem; text-align:center;">
                 <i class="fas fa-users-slash" style="font-size:3rem; color:var(--text-muted); display:block; margin-bottom:1rem;"></i>
                 <h3 style="margin:0 0 0.5rem 0; color:var(--text-main); font-weight:700;">No hay usuarios registrados</h3>
                 <p style="margin:0 0 1.5rem 0; color:var(--text-muted); font-size:0.9rem;">No se encontraron accesos configurados en el sistema actualmente.</p>
@@ -1434,44 +1454,47 @@ function renderUsersTable() {
         return;
     }
 
-    wrapper.innerHTML = `
-        <table id="usersTable" class="w-100">
-            <thead>
-                <tr>
-                    <th>Nombre Completo</th>
-                    <th>Usuario / Email</th>
-                    <th>Rol de Acceso</th>
-                    <th>Sucursal Asignada</th>
-                    <th class="text-right">Acciones</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${state.users.map(u => `
+    usersTab.innerHTML = `
+        ${headerHTML}
+        <div class="table-container" style="background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border-color); padding:1.5rem;">
+            <table id="usersTable" class="w-100">
+                <thead>
                     <tr>
-                        <td data-label="Nombre Completo">
-                            <strong>${u.full_name || u.username}</strong>
-                        </td>
-                        <td data-label="Usuario / Email">
-                            <span style="font-family:monospace; font-size:0.9rem; color:var(--primary);">${u.username}</span>
-                        </td>
-                        <td data-label="Rol">
-                            <span class="badge ${u.role === 'admin' ? 'badge-primary' : 'badge-secondary'}">
-                                <i class="fas ${u.role === 'admin' ? 'fa-user-shield' : 'fa-user'}"></i> ${u.role === 'admin' ? 'Administrador' : 'Vendedor'}
-                            </span>
-                        </td>
-                        <td data-label="Sucursal">
-                            ${u.role === 'vendedor' && u.store_name ? `<span class="badge badge-success"><i class="fas fa-store"></i> ${u.store_name}</span>` : '<span style="color:var(--text-muted); font-size:0.85rem;">Todas (Acceso Global)</span>'}
-                        </td>
-                        <td class="text-right" data-label="Acciones">
-                            <div style="display:flex; justify-content:flex-end; gap:0.4rem;">
-                                <button type="button" class="btn-icon text-primary" onclick="openUserModal(${u.id})" title="Editar"><i class="fas fa-edit"></i></button>
-                                ${u.username !== 'admin' ? `<button type="button" class="btn-icon text-danger" onclick="deleteUser(${u.id})" title="Eliminar"><i class="fas fa-trash"></i></button>` : '<span class="badge badge-success" style="font-size:0.7rem;">Admin Maestro</span>'}
-                            </div>
-                        </td>
+                        <th>Nombre Completo</th>
+                        <th>Usuario / Email</th>
+                        <th>Rol de Acceso</th>
+                        <th>Sucursal Asignada</th>
+                        <th class="text-right">Acciones</th>
                     </tr>
-                `).join('')}
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    ${state.users.map(u => `
+                        <tr>
+                            <td data-label="Nombre Completo">
+                                <strong>${u.full_name || u.username}</strong>
+                            </td>
+                            <td data-label="Usuario / Email">
+                                <span style="font-family:monospace; font-size:0.9rem; color:var(--primary);">${u.username}</span>
+                            </td>
+                            <td data-label="Rol">
+                                <span class="badge ${u.role === 'admin' ? 'badge-primary' : 'badge-secondary'}">
+                                    <i class="fas ${u.role === 'admin' ? 'fa-user-shield' : 'fa-user'}"></i> ${u.role === 'admin' ? 'Administrador' : 'Vendedor'}
+                                </span>
+                            </td>
+                            <td data-label="Sucursal">
+                                ${u.role === 'vendedor' && u.store_name ? `<span class="badge badge-success"><i class="fas fa-store"></i> ${u.store_name}</span>` : '<span style="color:var(--text-muted); font-size:0.85rem;">Todas (Acceso Global)</span>'}
+                            </td>
+                            <td class="text-right" data-label="Acciones">
+                                <div style="display:flex; justify-content:flex-end; gap:0.4rem;">
+                                    <button type="button" class="btn-icon text-primary" onclick="openUserModal(${u.id})" title="Editar"><i class="fas fa-edit"></i></button>
+                                    ${u.username !== 'admin' ? `<button type="button" class="btn-icon text-danger" onclick="deleteUser(${u.id})" title="Eliminar"><i class="fas fa-trash"></i></button>` : '<span class="badge badge-success" style="font-size:0.7rem;">Admin Maestro</span>'}
+                                </div>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
     `;
 }
 
