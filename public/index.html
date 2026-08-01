@@ -975,19 +975,25 @@
             </div>
         </div>
 
-        <!-- 6. USERS & PERMISSIONS (PASO 1: PRUEBA DE AISLAMIENTO - HOLA MUNDO) -->
-        <div id="users-tab" class="tab-content" style="padding: 1.5rem;">
-            <div style="background: #1e293b; padding: 3.5rem 2rem; border-radius: 16px; text-align: center; border: 2px solid #3b82f6; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-                <i class="fas fa-vial" style="font-size: 3.5rem; color: #60a5fa; margin-bottom: 1rem; display: block;"></i>
-                <h1 style="color: #ffffff; font-size: 2.2rem; margin: 0 0 0.75rem 0; font-weight: 800; letter-spacing: -0.02em;">
-                    HOLA MUNDO - TEST DE RUTA
-                </h1>
-                <p style="color: #94a3b8; font-size: 1.1rem; max-width: 600px; margin: 0 auto 1.5rem auto; line-height: 1.6;">
-                    Prueba de Aislamiento del Frontend: Si puedes ver esta pantalla azul, el Enrutador (Router) funciona perfectamente y la vista está conectada.
-                </p>
-                <button type="button" class="btn btn-primary" onclick="alert('✅ ¡EL ROUTER DEL FRONTEND FUNCIONA CORRECTAMENTE!')" style="padding: 0.85rem 1.8rem; font-size: 1rem; font-weight: 700; border-radius: 10px; box-shadow: 0 4px 14px rgba(37,99,235,0.4);">
-                    <i class="fas fa-check-circle"></i> Probar Interacción en Ruta
+        <!-- 6. USERS & PERMISSIONS (MÓDULO RECONSTRUIDO Y CONECTADO) -->
+        <div id="users-tab" class="tab-content" style="width: 100%;">
+            <div class="pos-action-bar mb-4" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; background:var(--card-bg); padding:1.5rem; border-radius:var(--radius-md); border:1px solid var(--border-color);">
+                <div>
+                    <h1 style="margin:0; font-size:1.6rem; display:flex; align-items:center; gap:0.6rem; color:var(--text-main);">
+                        <i class="fas fa-users-cog" style="color:var(--primary);"></i> Gestión de Usuarios y Permisos
+                    </h1>
+                    <p style="margin:0.25rem 0 0 0; color:var(--text-muted); font-size:0.88rem;">Administra credenciales, roles y asignación de sucursales del personal</p>
+                </div>
+                <button type="button" class="btn btn-primary" onclick="openUserModal()" style="padding:0.75rem 1.4rem; font-size:0.95rem; border-radius:10px; font-weight:600; display:flex; align-items:center; gap:0.5rem; box-shadow: 0 4px 12px rgba(37,99,235,0.3);">
+                    <i class="fas fa-user-plus"></i> Crear Nuevo Usuario
                 </button>
+            </div>
+
+            <!-- CONTENEDOR DE TABLA DINÁMICA / ESTADO VACÍO -->
+            <div id="usersContainer" class="table-container" style="background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border-color); padding:1.5rem; min-height: 250px;">
+                <div id="usersTableWrapper">
+                    <!-- Inyectado dinámicamente por JS (renderUsersTable) -->
+                </div>
             </div>
         </div>
 

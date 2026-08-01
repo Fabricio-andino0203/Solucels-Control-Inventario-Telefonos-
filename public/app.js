@@ -155,12 +155,16 @@ function switchTab(tabId) {
         tabId = 'inventory-tab';
     }
 
-    // Activate tab content
-    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    // Activate tab content (con sobrescritura de estilo inline para garantizar visibilidad)
+    document.querySelectorAll('.tab-content').forEach(el => {
+        el.classList.remove('active');
+        el.style.display = 'none';
+    });
     const tabEl = document.getElementById(tabId);
     if (tabEl) {
         tabEl.classList.add('active');
-        console.log('✅ [FRONTEND ROUTER] Tab activado exitosamente en el DOM:', tabId);
+        tabEl.style.display = 'block';
+        console.log('✅ [FRONTEND ROUTER] Tab activado exitosamente en el DOM con display:block:', tabId);
     } else {
         console.error('❌ [FRONTEND ROUTER] No se encontró el elemento con ID:', tabId);
     }
