@@ -1417,31 +1417,16 @@ function toggleUserStoreField() {
 // ==========================================
 
 function renderUsersTable() {
-    const usersTab = document.getElementById('users-tab');
-    if (!usersTab) {
-        console.error('❌ [FRONTEND ERROR] No se encontró el elemento #users-tab en el DOM');
+    const tableContainer = document.getElementById('users-table-container');
+    if (!tableContainer) {
+        console.error('❌ [FRONTEND ERROR] No se encontró el elemento #users-table-container en el DOM');
         return;
     }
 
     if (!Array.isArray(state.users)) state.users = [];
 
-    const headerHTML = `
-        <div class="pos-action-bar mb-4" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; background:var(--card-bg); padding:1.5rem; border-radius:var(--radius-md); border:1px solid var(--border-color);">
-            <div>
-                <h2 style="margin:0; font-size:1.6rem; display:flex; align-items:center; gap:0.6rem; color:var(--text-main);">
-                    <i class="fas fa-users-cog" style="color:var(--primary);"></i> Gestión de Usuarios
-                </h2>
-                <p style="margin:0.25rem 0 0 0; color:var(--text-muted); font-size:0.88rem;">Administra credenciales, roles y asignación de sucursales del personal</p>
-            </div>
-            <button id="btn-create-user" type="button" class="btn btn-primary" onclick="openUserModal()" style="padding:0.75rem 1.4rem; font-size:0.95rem; border-radius:10px; font-weight:600; display:flex; align-items:center; gap:0.5rem; box-shadow: 0 4px 12px rgba(37,99,235,0.3);">
-                <i class="fas fa-user-plus"></i> Crear Nuevo Usuario
-            </button>
-        </div>
-    `;
-
     if (state.users.length === 0) {
-        usersTab.innerHTML = `
-            ${headerHTML}
+        tableContainer.innerHTML = `
             <div style="background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border-color); padding:3.5rem 1.5rem; text-align:center;">
                 <i class="fas fa-users-slash" style="font-size:3rem; color:var(--text-muted); display:block; margin-bottom:1rem;"></i>
                 <h3 style="margin:0 0 0.5rem 0; color:var(--text-main); font-weight:700;">No hay usuarios registrados</h3>
@@ -1454,8 +1439,7 @@ function renderUsersTable() {
         return;
     }
 
-    usersTab.innerHTML = `
-        ${headerHTML}
+    tableContainer.innerHTML = `
         <div class="table-container" style="background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border-color); padding:1.5rem;">
             <table id="usersTable" class="w-100">
                 <thead>
