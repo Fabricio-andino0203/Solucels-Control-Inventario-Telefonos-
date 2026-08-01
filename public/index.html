@@ -322,6 +322,23 @@
                 </div>
             </div>
 
+            <!-- POS ACTION BAR (FASE 3 & 4) -->
+            <div class="pos-action-bar mb-3" style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center;">
+                <button type="button" class="btn btn-primary" onclick="openQrScanner()" style="background:#2563eb; padding:0.75rem 1.2rem; border-radius:12px; font-weight:600; min-height:48px; display:flex; align-items:center; gap:0.5rem;">
+                    <i class="fas fa-camera" style="font-size:1.1rem;"></i> Escanear IMEI (Cámara)
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="openGlobalStoreSearchModal()" style="padding:0.75rem 1.2rem; border-radius:12px; font-weight:600; min-height:48px; display:flex; align-items:center; gap:0.5rem;">
+                    <i class="fas fa-search-location" style="font-size:1.1rem;"></i> Buscar en Otras Sucursales
+                </button>
+                <div style="margin-left:auto; display:flex; gap:0.3rem; background:var(--card-bg); padding:0.25rem; border-radius:10px; border:1px solid var(--border-color);">
+                    <button class="btn-icon active" id="viewModeGridBtn" onclick="setPosViewMode('grid')" title="Vista Tarjetas (POS Táctil)" style="padding:0.5rem 0.75rem;"><i class="fas fa-th-large"></i></button>
+                    <button class="btn-icon" id="viewModeTableBtn" onclick="setPosViewMode('table')" title="Vista Tabla" style="padding:0.5rem 0.75rem;"><i class="fas fa-list"></i></button>
+                </div>
+            </div>
+
+            <!-- POS CARDS VIEW CONTAINER (FASE 3) -->
+            <div id="posCardGrid" class="pos-card-grid mb-4" style="display:none;"></div>
+
             <div class="filters-bar">
                 <div class="filters-search">
                     <i class="fas fa-search"></i>
@@ -1215,6 +1232,12 @@
                     </div>
                 </div>
 
+                <div class="form-group mt-3" style="border:1.5px dashed var(--primary); padding:1rem; border-radius:var(--radius-sm); background:rgba(37, 99, 235, 0.06);">
+                    <label style="color:var(--text-main); font-weight:600;"><i class="fas fa-file-invoice-dollar" style="color:var(--primary);"></i> Foto / Comprobante de Factura de Venta *</label>
+                    <input type="file" id="saleInvoiceFile" accept="image/*" capture="environment" required style="margin-top:0.5rem; width:100%;">
+                    <small style="color:var(--text-muted); display:block; margin-top:0.4rem; font-size:0.8rem;">⚠️ Requisito obligatorio para autorizar la salida de inventario.</small>
+                </div>
+
                 <div class="form-group mt-3"><label>Notas / Observaciones de Venta</label><input type="text"
                         id="saleNotes" placeholder="Ej. Folio #1234"></div>
 
@@ -1316,6 +1339,57 @@
     <!-- CONTENEDOR INVISIBLE REMOVIDO PARA USAR SISTEMA DE IMPRESIÓN NATIVO -->
     <div id="toast" class="toast">Mensaje</div>
     <script src="app.js?v=2026.05.04.1" charset="utf-8"></script>
+    <!-- CAMERA QR/BARCODE SCANNER MODAL (FASE 3) -->
+    <div id="qrScannerModal" class="modal-overlay">
+        <div class="modal" style="max-width:500px; text-align:center;">
+            <div class="modal-header">
+                <h2><i class="fas fa-camera"></i> Escáner de IMEI</h2>
+                <button class="close-btn" onclick="closeQrScanner()"><i class="fas fa-times"></i></button>
+            </div>
+            <div style="padding:1rem 0;">
+                <div id="reader" style="width:100%; min-height:280px; background:#000; border-radius:12px; overflow:hidden;"></div>
+            </div>
+            <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">Apunta la cámara al código de barras del IMEI del teléfono.</p>
+        </div>
+    </div>
+
+    <!-- GLOBAL STORE SEARCH MODAL (FASE 4) -->
+    <div id="globalSearchModal" class="modal-overlay">
+        <div class="modal modal-lg" style="max-width:650px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-search-location"></i> Consultar Stock en Otras Sucursales</h2>
+                <button class="close-btn" onclick="closeModal('globalSearchModal')"><i class="fas fa-times"></i></button>
+            </div>
+            <div style="padding:1rem 0;">
+                <div class="form-group mb-3">
+                    <label>Seleccionar Modelo del Catálogo Maestro</label>
+                    <select id="globalSearchModelSelect" onchange="performGlobalStoreSearch()" class="input-select-premium" style="width:100%; padding:0.75rem; border-radius:var(--radius-sm); background:var(--bg-color); color:var(--text-main); border:1px solid var(--border-color);">
+                        <option value="">-- Seleccionar Modelo --</option>
+                    </select>
+                </div>
+
+                <!-- EXISTENCIAS CARD (MINIMALISTA - FASE 4) -->
+                <div id="globalSearchResultCard" style="display:none;" class="existencias-card mt-3">
+                    <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem; padding-bottom:0.75rem; border-bottom:1px solid var(--border-color);">
+                        <i class="fas fa-boxes" style="font-size:1.4rem; color:var(--primary);"></i>
+                        <h3 style="margin:0; font-size:1.1rem; color:var(--text-main);">Existencias</h3>
+                    </div>
+                    <div class="table-container">
+                        <table style="width:100%; border-collapse:collapse;" id="globalStockTable">
+                            <thead>
+                                <tr style="border-bottom:1px solid var(--border-color); text-align:left; color:var(--text-muted); font-size:0.85rem;">
+                                    <th style="padding:0.75rem 0.5rem;">Sucursal</th>
+                                    <th style="padding:0.75rem 0.5rem; text-align:center;">Stock</th>
+                                    <th style="padding:0.75rem 0.5rem; text-align:right;">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>
