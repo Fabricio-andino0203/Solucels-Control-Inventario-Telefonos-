@@ -35,16 +35,17 @@ async function processImage(buffer, subdir, filename) {
     const fullPath = path.join(fullDir, filename);
     const thumbPath = path.join(thumbDir, filename);
 
-    // Versión optimizada (max 1200px, WebP 75%)
+    // COMPRESIÓN ULTRA OPTIMIZADA (Max 1000px, WebP 65%)
+    // Reduce fotos de cámara móvil (5-8 MB) a solo ~60-90 KB con excelente legibilidad de facturas y garantías
     await sharp(buffer)
-        .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 75 })
+        .resize(1000, 1000, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 65, effort: 4 })
         .toFile(fullPath);
 
-    // Thumbnail (300px, WebP 60%)
+    // Miniatura liviana (max 250px, WebP 50%) -> ~10-15 KB
     await sharp(buffer)
-        .resize(300, 300, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 60 })
+        .resize(250, 250, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 50, effort: 4 })
         .toFile(thumbPath);
 
     return {

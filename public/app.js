@@ -2990,11 +2990,43 @@ async function saveWarranty(e) {
 }
 
 function viewImage(url) {
-    if(!url) return;
+    if (!url || url === 'undefined' || url === 'null' || url.trim() === '') {
+        showToast('No hay una imagen adjunta disponible para este documento.', true);
+        return;
+    }
     const img = document.getElementById('lightboxImage');
-    img.src = url;
+    if (!img) return;
+
+    let fullUrl = url.trim();
+    if (!fullUrl.startsWith('http') && !fullUrl.startsWith('/')) {
+        fullUrl = '/' + fullUrl;
+    }
+
+    img.src = fullUrl;
+    img.onerror = () => {
+        showToast('La imagen no existe o no se pudo cargar del servidor.', true);
+        closeModal('lightboxModal');
+    };
     openModal('lightboxModal');
 }
+
+// Cierre rápido con tecla Escape para cualquier modal o visor de imágenes
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeModal('lightboxModal');
+        closeModal('saleDetailModal');
+        closeModal('userModal');
+        closeModal('warrantyModal');
+        closeModal('phoneModal');
+        closeModal('modelModal');
+        closeModal('transferModal');
+        closeModal('saleModal');
+        closeModal('resetModal');
+        closeModal('reportsModal');
+        closeModal('qrScannerModal');
+        closeModal('globalSearchModal');
+    }
+});
 
 // ==========================================
 // DB RESET — DANGER ZONE
