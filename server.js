@@ -1023,6 +1023,24 @@ app.put('/api/liquidations/:id/pay', (req, res) => {
     } catch (err) { res.status(400).json({error: err.message}); }
 });
 
+app.post('/api/liquidations/bulk-pay', (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) {
+        return res.status(400).json({ error: "Debe proporcionar al menos un ID de venta." });
+    }
+    try {
+        const stmt = db.prepare("UPDATE sales SET payment_status='Pagado', saldo=0 WHERE id=?");
+        db.transaction(() => {
+            for (const id of ids) {
+                stmt.run(id);
+            }
+        })();
+        res.json({ success: true, count: ids.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/liquidations/history', (req, res) => {
     try {
         res.json(db.prepare(`
