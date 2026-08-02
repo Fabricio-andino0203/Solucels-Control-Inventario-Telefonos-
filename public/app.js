@@ -153,7 +153,7 @@ async function fetchAuth(url, options = {}) {
 }
 
 // FETCH DATA
-async function fetchAllData() { await Promise.all([fetchConfig(), fetchInventory()]); fetchTransfers(); fetchSales(); fetchLiquidations(); }
+async function fetchAllData() { await Promise.all([fetchConfig(), fetchInventory()]); fetchTransfers(); fetchSales(); fetchLiquidations(); fetchWarranties(); }
 function switchTab(tabId) {
     console.log('🚀 [FRONTEND ROUTER] Ejecutando switchTab para pestaña:', tabId);
     
@@ -2868,9 +2868,19 @@ function generateAuditPDF(data, storeName, responsibleName, items) {
 async function fetchWarranties() {
     try {
         const res = await fetchAuth(`${API_URL}/warranties`);
-        state.warranties = await res.json();
+        const data = await res.json();
+        if (Array.isArray(data)) {
+            state.warranties = data;
+        } else {
+            console.error('API /warranties no devolvió un array:', data);
+            state.warranties = [];
+        }
         renderWarrantiesTable();
-    } catch(err) { console.error(err); }
+    } catch(err) { 
+        console.error('Error al obtener garantías:', err); 
+        state.warranties = []; 
+        renderWarrantiesTable(); 
+    }
 }
 
 function renderWarrantiesTable() {
