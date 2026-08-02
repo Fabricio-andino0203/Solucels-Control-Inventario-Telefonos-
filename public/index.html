@@ -438,12 +438,12 @@
                 <table id="salesTable">
                     <thead>
                         <tr>
-                            <th>Fecha</th>
+                            <th>Fecha & Hora</th>
                             <th>Equipo (IMEI)</th>
-                            <th>Tienda Venta</th>
-                            <th>Tipo Venta</th>
-                            <th>Notas</th>
-                            <th>Precio Final (L.)</th>
+                            <th>Vendedor / Tienda</th>
+                            <th>Tipo & Precio</th>
+                            <th>Plazo Garantía (30d)</th>
+                            <th>Comprobante & Garantía</th>
                             <th class="text-right">Acciones</th>
                         </tr>
                     </thead>
@@ -982,11 +982,12 @@
                 <table id="warrantiesTable">
                     <thead>
                         <tr>
-                            <th>Fecha</th>
+                            <th>Fecha Venta</th>
                             <th>Cliente</th>
                             <th>Equipo (IMEI)</th>
                             <th>Tienda</th>
-                            <th>Documentos</th>
+                            <th>Plazo Garantía (30d)</th>
+                            <th>Comprobante & Garantía</th>
                             <th class="text-right">Acciones</th>
                         </tr>
                     </thead>
@@ -1117,7 +1118,7 @@
                 <h2>Escanear Código IMEI / S/N</h2><button class="close-btn" onclick="closeScanner()"><i
                         class="fas fa-times"></i></button>
             </div>
-            <div id="reader" style="width:100%; min-height:300px;"></div>
+            <div id="quickFormScannerReader" style="width:100%; min-height:300px;"></div>
         </div>
     </div>
 
@@ -1321,7 +1322,7 @@
                 <button class="close-btn" onclick="closeQrScanner()"><i class="fas fa-times"></i></button>
             </div>
             <div style="padding:1rem 0;">
-                <div id="reader" style="width:100%; min-height:280px; background:#000; border-radius:12px; overflow:hidden;"></div>
+                <div id="mainQrScannerReader" style="width:100%; min-height:280px; background:#000; border-radius:12px; overflow:hidden;"></div>
             </div>
             <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">Apunta la cámara al código de barras del IMEI del teléfono.</p>
         </div>
@@ -1416,6 +1417,17 @@
                     <button type="submit" class="btn btn-primary" style="padding:0.7rem 1.4rem;"><i class="fas fa-save"></i> Guardar Usuario</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- SALE DETAIL MODAL -->
+    <div id="saleDetailModal" class="modal-overlay">
+        <div class="modal modal-lg" style="max-width:680px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-receipt"></i> Información Detallada de la Venta</h2>
+                <button class="close-btn" onclick="closeModal('saleDetailModal')"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="saleDetailContent" style="padding:1rem 0;"></div>
         </div>
     </div>
 
