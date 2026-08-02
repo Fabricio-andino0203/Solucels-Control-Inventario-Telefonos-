@@ -498,10 +498,32 @@
             <div id="liquidation-date-cards" class="stats-container"
                 style="margin-top: 1rem; flex-wrap: wrap; gap: 0.75rem;"></div>
 
+            <!-- BARRAS DE ACCIONES EN LOTE Y REPORTE PDF -->
+            <div id="liquidation-bulk-bar" class="filters-bar" style="margin-top: 1rem; background: rgba(31, 41, 55, 0.8); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.75rem 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+                <div style="display:flex; align-items:center; gap:0.75rem;">
+                    <label style="display:inline-flex; align-items:center; gap:0.5rem; font-weight:700; cursor:pointer; color:var(--text-main);">
+                        <input type="checkbox" id="selectAllLiquidationsCheck" onchange="toggleSelectAllLiquidations(this)" style="width:18px; height:18px; cursor:pointer;">
+                        <span>Seleccionar Todos</span>
+                    </label>
+                    <span id="liquidationSelectionSummary" style="font-size:0.88rem; color:var(--text-muted); padding-left:0.75rem; border-left:1px solid var(--border-color);">
+                        0 seleccionados (L. 0.00)
+                    </span>
+                </div>
+                <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap;">
+                    <button class="btn btn-primary" onclick="generateLiquidationReportPDF()" style="padding:0.5rem 1rem; font-size:0.88rem; background:linear-gradient(135deg, #2563eb, #1d4ed8);">
+                        <i class="fas fa-file-pdf"></i> Generar Factura PDF
+                    </button>
+                    <button class="btn btn-success" id="btnBulkPayLiquidations" onclick="markSelectedLiquidationsAsPaid()" style="padding:0.5rem 1rem; font-size:0.88rem; background:linear-gradient(135deg, #10b981, #059669);">
+                        <i class="fas fa-check-double"></i> Liquidar Seleccionados (<span id="bulkPayCount">0</span>)
+                    </button>
+                </div>
+            </div>
+
             <div class="table-container mt-3">
                 <table id="liquidationsTable">
                     <thead>
                         <tr>
+                            <th style="width:40px; text-align:center;"><i class="fas fa-check-square"></i></th>
                             <th>ID Venta</th>
                             <th>Fecha Venta</th>
                             <th>Equipo (IMEI)</th>

@@ -1349,9 +1349,232 @@ function calculateLiquidationDate(dateStr) {
     return `${txt} ${dd}/${m}`;
 }
 
+let selectedLiquidationIds = new Set();
+let currentDisplayedLiquidations = [];
+
+function toggleSelectAllLiquidations(masterCheck) {
+    const currentList = currentDisplayedLiquidations && currentDisplayedLiquidations.length ? currentDisplayedLiquidations : (state.liquidations || []);
+    if (masterCheck.checked) {
+        currentList.forEach(s => selectedLiquidationIds.add(s.id));
+    } else {
+        selectedLiquidationIds.clear();
+    }
+    updateLiquidationCheckboxesState();
+    updateLiquidationSelectionSummary();
+}
+
+function onLiquidationItemCheckChange(id, isChecked) {
+    if (isChecked) {
+        selectedLiquidationIds.add(id);
+    } else {
+        selectedLiquidationIds.delete(id);
+    }
+    updateLiquidationSelectionSummary();
+}
+
+function updateLiquidationCheckboxesState() {
+    const checkboxes = document.querySelectorAll('.liq-item-check');
+    checkboxes.forEach(cb => {
+        const id = parseInt(cb.value);
+        cb.checked = selectedLiquidationIds.has(id);
+    });
+}
+
+function getSelectedLiquidationItems() {
+    const all = state.liquidations || [];
+    if (selectedLiquidationIds.size > 0) {
+        return all.filter(s => selectedLiquidationIds.has(s.id));
+    }
+    return currentDisplayedLiquidations && currentDisplayedLiquidations.length ? currentDisplayedLiquidations : all;
+}
+
+function updateLiquidationSelectionSummary() {
+    const items = getSelectedLiquidationItems();
+    const count = selectedLiquidationIds.size > 0 ? selectedLiquidationIds.size : items.length;
+    let totalSaldo = 0;
+    items.forEach(i => totalSaldo += (i.saldo || 0));
+
+    const summaryEl = document.getElementById('liquidationSelectionSummary');
+    const countEl = document.getElementById('bulkPayCount');
+    
+    if (summaryEl) {
+        summaryEl.innerHTML = selectedLiquidationIds.size > 0
+            ? `<strong style="color:var(--primary);">${count} seleccionados</strong> | Saldo: <strong style="color:#fbbf24;">L. ${totalSaldo.toLocaleString('en-US', {minimumFractionDigits:2})}</strong>`
+            : `Mostrando <strong>${items.length} equipos</strong> | Total: <strong style="color:#fbbf24;">L. ${totalSaldo.toLocaleString('en-US', {minimumFractionDigits:2})}</strong>`;
+    }
+    if (countEl) countEl.innerText = count;
+}
+
+async function markSelectedLiquidationsAsPaid() {
+    const items = getSelectedLiquidationItems();
+    if (!items || !items.length) {
+        showToast('No hay equipos seleccionados o pendientes para liquidar.', true);
+        return;
+    }
+
+    const count = items.length;
+    let totalSaldo = 0;
+    items.forEach(i => totalSaldo += (i.saldo || 0));
+
+    const confirmMsg = `¿Confirmar chequeo y liquidar al 100% los ${count} equipo(s) seleccionados por un total de L. ${totalSaldo.toLocaleString('en-US', {minimumFractionDigits:2})}?`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        const ids = items.map(i => i.id);
+        const res = await fetchAuth(`${API_URL}/liquidations/bulk-pay`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        showToast(`Éxito: ${count} equipo(s) liquidados en un solo chequeo.`);
+        selectedLiquidationIds.clear();
+        fetchLiquidations();
+    } catch(err) {
+        showToast('Error en chequeo masivo: ' + err.message, true);
+    }
+}
+
+function generateLiquidationReportPDF(customItems) {
+    const items = customItems || getSelectedLiquidationItems();
+    if (!items || !items.length) {
+        showToast('Selecciona al menos un equipo para generar la factura / reporte PDF.', true);
+        return;
+    }
+
+    const genDate = new Date().toLocaleDateString('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const genTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    let totalPrecioCredit = 0;
+    let totalPrimas = 0;
+    let totalSaldo = 0;
+
+    items.forEach(s => {
+        totalPrecioCredit += (s.final_price || 0);
+        totalPrimas += (s.prima || 0);
+        totalSaldo += (s.saldo || 0);
+    });
+
+    const storeNames = Array.from(new Set(items.map(i => i.store_name))).join(', ');
+
+    let htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Reporte / Factura de Liquidación de Crédito - Solucels</title>
+    <style>
+        @page { size: A4; margin: 12mm; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; margin: 0; padding: 15px; font-size: 10pt; line-height: 1.4; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 15px; }
+        .company-title { font-size: 18pt; font-weight: 800; color: #1e3a8a; margin: 0; text-transform: uppercase; }
+        .subtitle { font-size: 11pt; color: #475569; margin-top: 2px; font-weight: 600; }
+        .meta-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; margin-bottom: 15px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 9pt; }
+        .meta-item strong { display: block; color: #64748b; font-size: 8pt; text-transform: uppercase; }
+        .meta-item span { font-weight: 700; color: #0f172a; font-size: 10pt; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 9pt; }
+        th { background: #1e3a8a; color: #ffffff; text-align: left; padding: 7px 10px; font-weight: 700; font-size: 8.5pt; text-transform: uppercase; }
+        td { padding: 7px 10px; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+        tr:nth-child(even) { background-color: #f8fafc; }
+        .text-right { text-align: right; }
+        .mono { font-family: monospace; font-weight: 700; }
+        .badge-id { background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-family: monospace; }
+        .summary-card { background: #eff6ff; border: 2px solid #3b82f6; border-radius: 10px; padding: 14px; margin-top: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .summary-total { font-size: 16pt; font-weight: 800; color: #1e3a8a; }
+        .signatures { margin-top: 40px; display: flex; justify-content: space-between; padding: 0 30px; }
+        .sig-line { width: 40%; text-align: center; border-top: 1px solid #64748b; padding-top: 5px; font-size: 9pt; font-weight: 600; color: #334155; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <div class="company-title">Solucels Control</div>
+            <div class="subtitle">Reporte / Factura Detallada de Liquidación de Crédito</div>
+        </div>
+        <div style="text-align:right;">
+            <div style="font-size:12pt; font-weight:800; color:#1e3a8a;">DETALLE DE COBRO / FACTURA</div>
+            <div style="font-size:8.5pt; color:#64748b;">Fecha: ${genDate} — ${genTime}</div>
+        </div>
+    </div>
+
+    <div class="meta-box">
+        <div class="meta-item">
+            <strong>TIENDA / ORIGEN</strong>
+            <span>${storeNames.toUpperCase()}</span>
+        </div>
+        <div class="meta-item">
+            <strong>CANTIDAD DE EQUIPOS</strong>
+            <span>${items.length} UNIDADES</span>
+        </div>
+        <div class="meta-item">
+            <strong>GENERADO POR</strong>
+            <span>${(currentUser || 'ADMIN').toUpperCase()}</span>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width:22mm;">ID Venta</th>
+                <th>Marca y Modelo</th>
+                <th style="width:32mm;">IMEI</th>
+                <th style="width:25mm;">Tienda</th>
+                <th class="text-right" style="width:25mm;">Precio Crédito</th>
+                <th class="text-right" style="width:22mm;">Prima</th>
+                <th class="text-right" style="width:28mm;">Saldo a Pagar</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${items.map(s => `
+                <tr>
+                    <td><span class="badge-id">${formatSaleId(s.id)}</span></td>
+                    <td><strong>${escapeHtml(s.brand_name || '')} ${escapeHtml(s.model_name)}</strong> <small style="color:#64748b">(${s.ram || 'N/A'}/${s.storage || 'N/A'})</small></td>
+                    <td class="mono" style="color:#1e3a8a;">${escapeHtml(s.imei)}</td>
+                    <td>${escapeHtml(s.store_name)}</td>
+                    <td class="text-right">L. ${(s.final_price || 0).toLocaleString('en-US', {minimumFractionDigits:2})}</td>
+                    <td class="text-right">L. ${(s.prima || 0).toLocaleString('en-US', {minimumFractionDigits:2})}</td>
+                    <td class="text-right mono" style="color:#b45309;">L. ${(s.saldo || 0).toLocaleString('en-US', {minimumFractionDigits:2})}</td>
+                </tr>
+            `).join('')}
+        </tbody>
+    </table>
+
+    <div class="summary-card">
+        <div>
+            <div style="font-size:9pt; color:#475569; font-weight:600;">CÁLCULOS Y CERRADO DE FACTURA:</div>
+            <div style="font-size:9pt; color:#334155;">Suma Precio Crédito: <strong>L. ${totalPrecioCredit.toLocaleString('en-US', {minimumFractionDigits:2})}</strong> | Suma Primas: <strong>L. ${totalPrimas.toLocaleString('en-US', {minimumFractionDigits:2})}</strong></div>
+        </div>
+        <div style="text-align:right;">
+            <div style="font-size:9pt; color:#475569; font-weight:700; text-transform:uppercase;">TOTAL COBRADO EN FACTURA:</div>
+            <div class="summary-total">L. ${totalSaldo.toLocaleString('en-US', {minimumFractionDigits:2})}</div>
+        </div>
+    </div>
+
+    <div class="signatures">
+        <div class="sig-line">Entregado por / Vendedor</div>
+        <div class="sig-line">Recibido Conforme / Administración</div>
+    </div>
+</body>
+</html>`;
+
+    let printFrame = document.getElementById('printFrame');
+    if (!printFrame) {
+        printFrame = document.createElement('iframe');
+        printFrame.id = 'printFrame';
+        printFrame.style.cssText = 'position:absolute;width:0;height:0;border:none;';
+        document.body.appendChild(printFrame);
+    }
+    showToast('Generando Factura PDF de Liquidación...');
+    const doc = printFrame.contentWindow.document;
+    doc.open(); doc.write(htmlContent); doc.close();
+    setTimeout(() => { printFrame.contentWindow.focus(); printFrame.contentWindow.print(); }, 700);
+}
+
 function renderLiquidationsTable(data) {
     const tbody = document.querySelector('#liquidationsTable tbody');
     const items = data || state.liquidations;
+    currentDisplayedLiquidations = items;
     const filterSelect = document.getElementById('liquidationDateFilter');
     const cardsContainer = document.getElementById('liquidation-date-cards');
 
@@ -1361,12 +1584,13 @@ function renderLiquidationsTable(data) {
             filterSelect.innerHTML = '<option value="ALL">Todas las Fechas de Pago</option>';
         }
         document.getElementById('stat-total-liquidations').innerText = '0.00';
-        return tbody.innerHTML = '<tr><td colspan="7">No hay liquidaciones pendientes</td></tr>';
+        updateLiquidationSelectionSummary();
+        return tbody.innerHTML = '<tr><td colspan="9" class="text-center" style="color:var(--text-muted); padding:2rem;">No hay liquidaciones pendientes</td></tr>';
     }
 
     // Build groups by payment date
     const dateGroups = {};
-    const allItems = state.liquidations; // always use full list for groups
+    const allItems = state.liquidations;
 
     allItems.forEach(s => {
         const payDate = calculateLiquidationDate(s.sale_date) || 'Sin Fecha';
@@ -1375,17 +1599,15 @@ function renderLiquidationsTable(data) {
         dateGroups[payDate].total += s.saldo;
     });
 
-    // Sort dates chronologically
     const sortedDates = Object.keys(dateGroups).sort((a, b) => {
         const parsePayDate = (str) => {
             const match = str.match(/(\d{2})\/(\d{2})/);
             if (!match) return 99999;
-            return parseInt(match[2]) * 100 + parseInt(match[1]); // month*100 + day
+            return parseInt(match[2]) * 100 + parseInt(match[1]);
         };
         return parsePayDate(a) - parsePayDate(b);
     });
 
-    // Populate filter dropdown (only when rendering full list)
     if (!data && filterSelect) {
         const currentValue = filterSelect.value;
         filterSelect.innerHTML = '<option value="ALL">📅 Todas las Fechas de Pago</option>';
@@ -1397,9 +1619,7 @@ function renderLiquidationsTable(data) {
         filterSelect.value = currentValue || 'ALL';
     }
 
-    // Render stat cards per date
     if (cardsContainer) {
-        // Determine which colors to use for cards
         const cardColors = [
             { bg: 'rgba(245, 158, 11, 0.1)', border: 'rgba(245, 158, 11, 0.3)', color: '#fbbf24', icon: 'fa-calendar-check' },
             { bg: 'rgba(59, 130, 246, 0.1)', border: 'rgba(59, 130, 246, 0.3)', color: '#60a5fa', icon: 'fa-calendar-day' },
@@ -1423,17 +1643,14 @@ function renderLiquidationsTable(data) {
         }).join('');
     }
 
-    // Render table rows (with date group headers if showing ALL)
     const selectedFilter = filterSelect ? filterSelect.value : 'ALL';
-    let displayItems = items;
     let liquidationsTotal = 0;
 
     if (selectedFilter === 'ALL' && !data) {
-        // Group display with section headers
         let html = '';
         sortedDates.forEach(date => {
             const group = dateGroups[date];
-            html += `<tr class="liquidation-date-header"><td colspan="7" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(59, 130, 246, 0.1)); border-left: 4px solid var(--primary); padding: 0.75rem 1rem; font-weight: 700; color: #fff; font-size: 0.95rem;">
+            html += `<tr class="liquidation-date-header"><td colspan="9" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(59, 130, 246, 0.1)); border-left: 4px solid var(--primary); padding: 0.75rem 1rem; font-weight: 700; color: #fff; font-size: 0.95rem;">
                 <i class="fas fa-calendar-check" style="color:var(--primary); margin-right:0.5rem;"></i> Pago: ${date}
                 <span style="float:right; color:#fbbf24; font-weight:800;">Total: L. ${group.total.toLocaleString('en-US', {minimumFractionDigits:2})} <small style="color:var(--text-muted); font-weight:400;">(${group.items.length} equipo${group.items.length !== 1 ? 's' : ''})</small></span>
             </td></tr>`;
@@ -1444,16 +1661,19 @@ function renderLiquidationsTable(data) {
         });
         tbody.innerHTML = html;
     } else {
-        // Filtered or search view
-        displayItems.forEach(s => { liquidationsTotal += s.saldo; });
-        tbody.innerHTML = displayItems.map(s => buildLiquidationRow(s)).join('');
+        items.forEach(s => { liquidationsTotal += s.saldo; });
+        tbody.innerHTML = items.map(s => buildLiquidationRow(s)).join('');
     }
 
     document.getElementById('stat-total-liquidations').innerText = liquidationsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 });
+    updateLiquidationCheckboxesState();
+    updateLiquidationSelectionSummary();
 }
 
 function buildLiquidationRow(s) {
+    const isChecked = selectedLiquidationIds.has(s.id) ? 'checked' : '';
     return `<tr>
+        <td class="text-center" data-label="Seleccionar"><input type="checkbox" class="liq-item-check" value="${s.id}" ${isChecked} onchange="onLiquidationItemCheckChange(${s.id}, this.checked)" style="width:17px; height:17px; cursor:pointer;"></td>
         <td data-label="ID Venta"><span class="badge badge-primary" style="font-family:monospace; font-size:0.85rem; font-weight:700; padding:0.35rem 0.6rem;">${formatSaleId(s.id)}</span></td>
         <td data-label="Fecha Venta">${formatDate(s.sale_date)}<br><small style="color:var(--danger); font-weight:bold;"><i class="fas fa-calendar-check"></i> Pago: ${calculateLiquidationDate(s.sale_date) || '-'}</small></td>
         <td data-label="Equipo"><strong>${escapeHtml(s.brand_name || '')} ${escapeHtml(s.model_name)}</strong><br><small style="color:var(--text-muted)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br><small style="font-family:monospace; color:var(--primary);">${escapeHtml(s.imei)}</small></td>
