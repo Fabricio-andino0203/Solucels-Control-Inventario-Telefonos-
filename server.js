@@ -1404,11 +1404,12 @@ app.post('/api/warranties/:saleId',
                     VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
                     saleId, client_name, client_phone, warranty_date, observations,
                     receiptPaths.path, receiptPaths.thumb,
-                    warrantyPaths.path, warrantyPaths.thumb, req.user.id
+                    warrantyPaths.path, warrantyPaths.thumb, req.user ? req.user.id : null
                 );
             }
             res.json({ success: true });
         } catch (err) {
+            console.error("Error guardando garantía:", err);
             res.status(500).json({ error: err.message });
         }
     }
@@ -1424,8 +1425,8 @@ app.get('/api/warranties/:saleId', (req, res) => {
 app.get('/api/warranties', (req, res) => {
     try {
         let sql = `
-            SELECT s.id as sale_id, s.sale_date, s.client_name as sale_client_name, s.client_phone as sale_client_phone, 
-                   s.final_price, s.sale_type, s.invoice_path as s_invoice_path, s.invoice_thumb as s_invoice_thumb,
+            SELECT s.id as sale_id, s.sale_date, s.final_price, s.sale_type, 
+                   s.invoice_path as s_invoice_path, s.invoice_thumb as s_invoice_thumb,
                    p.imei, m.name as model_name, b.name as brand_name, st.name as store_name, st.id as store_id,
                    w.id as warranty_id, w.client_name, w.client_phone, w.receipt_path, w.receipt_thumb, 
                    w.warranty_path, w.warranty_thumb, w.observations, w.created_at as warranty_date
@@ -1442,8 +1443,12 @@ app.get('/api/warranties', (req, res) => {
             params.push(req.user.store_id);
         }
         sql += ` ORDER BY s.sale_date DESC LIMIT 500`;
-        res.json(db.prepare(sql).all(...params));
-    } catch (err) { res.status(500).json({ error: err.message }); }
+        const rows = db.prepare(sql).all(...params);
+        res.json(rows || []);
+    } catch (err) { 
+        console.error("Error cargando garantías:", err);
+        res.status(500).json({ error: err.message }); 
+    }
 });
 
 // ==========================================
