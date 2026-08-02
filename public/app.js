@@ -1166,12 +1166,17 @@ function getWarrantyStatus(saleDateStr) {
     }
 }
 
+function formatSaleId(id) {
+    if (!id) return '#VEN-0000';
+    return `#VEN-${String(id).padStart(4, '0')}`;
+}
+
 function renderSalesTable() {
     const dataToRender = getFilteredSales();
 
     const tbody = document.querySelector('#salesTable tbody');
     if (!tbody) return;
-    if (!dataToRender.length) return tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:var(--text-muted); padding:2rem;">No hay movimientos de venta registrados</td></tr>';
+    if (!dataToRender.length) return tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color:var(--text-muted); padding:2rem;">No hay movimientos de venta registrados</td></tr>';
 
     let totalSales = 0;
     tbody.innerHTML = dataToRender.map(s => {
@@ -1183,33 +1188,28 @@ function renderSalesTable() {
         const wStatus = getWarrantyStatus(s.sale_date);
         const sellerName = s.seller_name || s.seller_username || 'Sistema';
 
-        // Receipt & Warranty Anchored Images
+        // Receipt Image (Uploaded by seller during sale)
         const receiptThumb = s.invoice_thumb || s.w_receipt_thumb;
         const receiptPath = s.invoice_path || s.w_receipt_path;
-        const warrantyThumb = s.w_warranty_thumb;
-        const warrantyPath = s.w_warranty_path;
 
         let docsHtml = '<div style="display:flex; gap:0.4rem; align-items:center;">';
         if (receiptThumb) {
-            docsHtml += `<img src="${receiptThumb}" onclick="viewImage('${receiptPath}')" title="Ver Recibo de Venta" loading="lazy" style="width:36px; height:36px; border-radius:6px; object-fit:cover; border:1px solid var(--primary); cursor:pointer;">`;
-        }
-        if (warrantyThumb) {
-            docsHtml += `<img src="${warrantyThumb}" onclick="viewImage('${warrantyPath}')" title="Ver Documento de Garantía" loading="lazy" style="width:36px; height:36px; border-radius:6px; object-fit:cover; border:1px solid var(--success); cursor:pointer;">`;
-        }
-        if (!receiptThumb && !warrantyThumb) {
-            docsHtml += `<span style="font-size:0.75rem; color:var(--text-muted); font-style:italic"><i class="fas fa-image"></i> Sin adjuntos</span>`;
+            docsHtml += `<img src="${receiptThumb}" onclick="viewImage('${receiptPath}')" title="Ver Comprobante de Venta" loading="lazy" style="width:38px; height:38px; border-radius:6px; object-fit:cover; border:1px solid var(--primary); cursor:pointer;">`;
+        } else {
+            docsHtml += `<span style="font-size:0.75rem; color:var(--text-muted); font-style:italic"><i class="fas fa-image"></i> Sin comprobante</span>`;
         }
         docsHtml += '</div>';
 
         const actionBtns = `
             <div style="display:flex; justify-content:flex-end; gap:0.4rem; align-items:center;">
-                <button class="btn-icon text-primary" onclick="showSaleDetail(${s.id})" title="Información Detallada"><i class="fas fa-info-circle"></i></button>
+                <button class="btn-icon text-primary" onclick="showSaleDetail(${s.id})" title="Información Detallada de Venta"><i class="fas fa-info-circle"></i></button>
                 ${currentUser === 'admin' ? `<button class="btn-icon text-danger" onclick="revertSale(${s.id})" title="Eliminar Venta"><i class="fas fa-undo"></i></button>` : ''}
             </div>
         `;
 
         return `
             <tr>
+                <td data-label="ID Venta"><span class="badge badge-primary" style="font-family:monospace; font-size:0.85rem; font-weight:700; padding:0.35rem 0.6rem;">${formatSaleId(s.id)}</span></td>
                 <td data-label="Fecha & Hora">${dateHtml}</td>
                 <td data-label="Equipo (IMEI)">
                     <strong>${escapeHtml(s.brand_name || '')} ${escapeHtml(s.model_name)}</strong><br>
@@ -1229,7 +1229,7 @@ function renderSalesTable() {
                         <i class="fas ${wStatus.isExpired ? 'fa-times-circle' : 'fa-shield-alt'}"></i> ${wStatus.label}
                     </span>
                 </td>
-                <td data-label="Comprobante & Garantía">${docsHtml}</td>
+                <td data-label="Comprobante">${docsHtml}</td>
                 <td data-label="Acciones" class="text-right">${actionBtns}</td>
             </tr>
         `;
@@ -1251,9 +1251,9 @@ function showSaleDetail(saleId) {
 
     const content = `
         <div style="background:var(--bg-color); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:1.25rem; margin-bottom:1.25rem;">
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:0.75rem; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+            <div style="display:flex; justify-space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:0.75rem; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
                 <div>
-                    <h3 style="margin:0; color:var(--text-main); font-size:1.15rem;">Venta #${s.id} — ${escapeHtml(s.brand_name || '')} ${escapeHtml(s.model_name)}</h3>
+                    <h3 style="margin:0; color:var(--text-main); font-size:1.15rem;"><span class="badge badge-primary" style="font-family:monospace; font-size:0.95rem; font-weight:700; margin-right:0.4rem;">${formatSaleId(s.id)}</span> ${escapeHtml(s.brand_name || '')} ${escapeHtml(s.model_name)}</h3>
                     <small style="color:var(--text-muted);"><i class="fas fa-calendar-alt"></i> ${formatDate(s.sale_date)}</small>
                 </div>
                 <span class="badge ${s.sale_type === 'Contado' ? 'badge-success' : 'badge-warning'}" style="font-size:0.9rem;">
@@ -2886,57 +2886,58 @@ async function fetchWarranties() {
 function renderWarrantiesTable() {
     const tbody = document.querySelector('#warrantiesTable tbody');
     if (!tbody) return;
-    const q = document.getElementById('warrantiesSearch')?.value.toLowerCase() || '';
+    const q = (document.getElementById('warrantiesSearch')?.value || '').trim().toLowerCase();
 
     let filtered = state.warranties || [];
     if (q) {
-        filtered = filtered.filter(w => 
-            (w.imei && w.imei.toLowerCase().includes(q)) ||
-            (w.client_name && w.client_name.toLowerCase().includes(q)) ||
-            (w.sale_client_name && w.sale_client_name.toLowerCase().includes(q)) ||
-            (w.model_name && w.model_name.toLowerCase().includes(q))
-        );
+        filtered = filtered.filter(w => {
+            const idStr = String(w.sale_id);
+            const formattedId = formatSaleId(w.sale_id).toLowerCase();
+            return (
+                idStr.includes(q) ||
+                formattedId.includes(q) ||
+                (w.imei && w.imei.toLowerCase().includes(q)) ||
+                (w.model_name && w.model_name.toLowerCase().includes(q)) ||
+                (w.brand_name && w.brand_name.toLowerCase().includes(q)) ||
+                (w.store_name && w.store_name.toLowerCase().includes(q))
+            );
+        });
     }
 
     if (!filtered.length) {
-        return tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:var(--text-muted); padding:2rem;">No hay registros de garantía para este filtro</td></tr>';
+        return tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:var(--text-muted); padding:2.5rem;">No se encontraron ventas para consultar garantía con este filtro</td></tr>';
     }
 
     tbody.innerHTML = filtered.map(w => {
-        const client = w.client_name || w.sale_client_name || 'Cliente Particular';
-        const phone = w.client_phone || w.sale_client_phone || '';
         const status = getWarrantyStatus(w.sale_date);
 
-        const recImg = w.receipt_thumb || w.s_invoice_thumb;
-        const recPath = w.receipt_path || w.s_invoice_path;
-        const warImg = w.warranty_thumb;
-        const warPath = w.warranty_path;
+        // Usar la foto del comprobante cargado por el vendedor al momento de registrar la venta
+        const recImg = w.s_invoice_thumb || w.receipt_thumb;
+        const recPath = w.s_invoice_path || w.receipt_path;
 
         return `
             <tr>
-                <td data-label="Fecha Venta">${formatDate(w.sale_date)}</td>
-                <td data-label="Cliente">
-                    <div style="font-weight:600">${escapeHtml(client)}</div>
-                    <small style="color:var(--text-muted)">${escapeHtml(phone)}</small>
+                <td data-label="ID Venta">
+                    <span class="badge badge-primary" style="font-family:monospace; font-size:0.85rem; font-weight:700; padding:0.35rem 0.6rem;">${formatSaleId(w.sale_id)}</span>
                 </td>
-                <td data-label="Equipo">
+                <td data-label="Fecha Venta">${formatDate(w.sale_date)}</td>
+                <td data-label="Equipo (IMEI)">
                     <div style="font-weight:600">${escapeHtml(w.brand_name || '')} ${escapeHtml(w.model_name)}</div>
                     <small style="font-family:monospace; color:var(--primary);">${escapeHtml(w.imei)}</small>
                 </td>
-                <td data-label="Tienda"><span class="badge badge-primary">${escapeHtml(w.store_name)}</span></td>
-                <td data-label="Plazo Garantía (30d)">
-                    <span class="badge" style="${status.style}; display:inline-flex; align-items:center; gap:0.35rem; font-weight:600;">
+                <td data-label="Tienda"><span class="badge badge-secondary">${escapeHtml(w.store_name)}</span></td>
+                <td data-label="Estado Garantía (30 Días)">
+                    <span class="badge" style="${status.style}; display:inline-flex; align-items:center; gap:0.35rem; font-weight:600; padding:0.4rem 0.7rem; font-size:0.85rem;">
                         <i class="fas ${status.isExpired ? 'fa-times-circle' : 'fa-shield-alt'}"></i> ${status.label}
                     </span>
                 </td>
-                <td data-label="Comprobante & Garantía">
-                    <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap;">
-                        ${recImg ? `<img src="${recImg}" class="doc-thumb" onclick="viewImage('${recPath}')" title="Comprobante de Venta" loading="lazy" style="width:38px; height:38px; border-radius:6px; object-fit:cover; border:1px solid var(--border-color); cursor:pointer;">` : '<span class="badge badge-warning" style="font-size:0.75rem;">Sin Recibo</span>'}
-                        ${warImg ? `<img src="${warImg}" class="doc-thumb" onclick="viewImage('${warPath}')" title="Póliza de Garantía" loading="lazy" style="width:38px; height:38px; border-radius:6px; object-fit:cover; border:1px solid var(--border-color); cursor:pointer;">` : '<span class="badge badge-warning" style="font-size:0.75rem;">Sin Póliza</span>'}
-                    </div>
+                <td data-label="Comprobante Venta">
+                    ${recImg ? `
+                        <img src="${recImg}" class="doc-thumb" onclick="viewImage('${recPath}')" title="Ver Comprobante de Venta Subido por Vendedor" loading="lazy" style="width:40px; height:40px; border-radius:6px; object-fit:cover; border:1px solid var(--primary); cursor:pointer;">
+                    ` : '<span class="badge badge-warning" style="font-size:0.75rem;">Sin Comprobante</span>'}
                 </td>
                 <td data-label="Acciones" class="text-right">
-                    <button class="btn btn-secondary" onclick="openWarrantyModal(${w.sale_id})" style="padding:0.4rem 0.8rem; font-size:0.85rem;"><i class="fas fa-upload"></i> Subir / Editar</button>
+                    <button class="btn btn-secondary" onclick="showSaleDetail(${w.sale_id})" style="padding:0.4rem 0.8rem; font-size:0.85rem;"><i class="fas fa-eye"></i> Ver Detalle Venta</button>
                 </td>
             </tr>
         `;
