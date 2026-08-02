@@ -309,6 +309,27 @@ function initDB() {
         const storeId = firstStore ? firstStore.id : 1;
         db.prepare('INSERT INTO users (full_name, username, password_hash, role, store_id) VALUES (?, ?, ?, ?, ?)').run('Vendedor Tienda 1', 'vendedor', hashVendedor, 'vendedor', storeId);
     }
+
+    // === MIGRACIÓN DE USUARIOS LOCALES A PRODUCCIÓN ===
+    const localUsersSeed = [
+        { full_name: 'PATRICIA ORDOÑEZ', username: 'Paty', password_hash: '$2b$10$wdCSSv5PdcGRVRleJoq1TudGXeON/EGUv7m/yxOhNufMH26ksqO7i', role: 'admin', store_id: null },
+        { full_name: 'Inversiones Solucels 1', username: 'solucels1', password_hash: '$2b$10$Q0LVecCxnkE2SUSkbNT6UO1tpmF4IY59NKgqF5XBMpSB3GWY1nzVy', role: 'vendedor', store_id: 1 },
+        { full_name: 'Inversiones Solucels 2', username: 'solucels2', password_hash: '$2b$10$RSKZ4R8BGngaol9Ipigks.BOiBIyywCZ8IFXYbi.NhkYJULppkzdu', role: 'vendedor', store_id: 2 },
+        { full_name: 'Inversiones Solucels 4', username: 'solucels4', password_hash: '$2b$10$N22JoOhNTzQs9RYcSqZkKufu/HvtjPgrg87RQQV3nGQx7h8sVGN1m', role: 'vendedor', store_id: 4 },
+        { full_name: 'Inversiones Solucels 5', username: 'solucels5', password_hash: '$2b$10$j/WAZl.3Rd6WuBB86TlwXOZNBH2QemHYH3zJGTj0d5awdlma6.4ES', role: 'vendedor', store_id: 5 },
+        { full_name: 'Inversiones Solucels 6', username: 'solucels6', password_hash: '$2b$10$lneuIuJAakb/VJ18/MaNUeG5Ukz0jmZBMouHzmcgew7LROAQvnnQy', role: 'vendedor', store_id: 6 }
+    ];
+
+    const checkUserStmt = db.prepare('SELECT id FROM users WHERE username = ?');
+    const insertUserStmt = db.prepare('INSERT INTO users (full_name, username, password_hash, role, store_id) VALUES (?, ?, ?, ?, ?)');
+
+    localUsersSeed.forEach(u => {
+        const exists = checkUserStmt.get(u.username);
+        if (!exists) {
+            console.log(`🌱 Migrando usuario a producción: ${u.username} (${u.full_name})`);
+            insertUserStmt.run(u.full_name, u.username, u.password_hash, u.role, u.store_id);
+        }
+    });
 }
 initDB();
 
