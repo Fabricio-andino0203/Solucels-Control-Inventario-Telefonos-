@@ -1453,7 +1453,16 @@ function renderLiquidationsTable(data) {
 }
 
 function buildLiquidationRow(s) {
-    return `<tr><td data-label="Fecha">${formatDate(s.sale_date)}<br><small style="color:var(--danger); font-weight:bold;"><i class="fas fa-calendar-check"></i> Pago: ${calculateLiquidationDate(s.sale_date) || '-'}</small></td><td data-label="Equipo"><strong>${s.model_name}</strong><br><small style="color:var(--text-primary)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br><small>${s.imei}</small></td><td data-label="Tienda">${s.store_name}</td><td data-label="Precio Crédito">L. ${s.final_price.toLocaleString('en-US')}</td><td data-label="Prima">L. ${s.prima.toLocaleString('en-US')}</td><td data-label="Saldo" style="color:#fbbf24; font-weight:bold;">L. ${s.saldo.toLocaleString('en-US')}</td><td data-label="Acción" class="actions-cell text-right"><button class="btn btn-primary" style="background:var(--success)" onclick="markAsPaid(${s.id})"><i class="fas fa-check-double"></i></button></td></tr>`;
+    return `<tr>
+        <td data-label="ID Venta"><span class="badge badge-primary" style="font-family:monospace; font-size:0.85rem; font-weight:700; padding:0.35rem 0.6rem;">${formatSaleId(s.id)}</span></td>
+        <td data-label="Fecha Venta">${formatDate(s.sale_date)}<br><small style="color:var(--danger); font-weight:bold;"><i class="fas fa-calendar-check"></i> Pago: ${calculateLiquidationDate(s.sale_date) || '-'}</small></td>
+        <td data-label="Equipo"><strong>${escapeHtml(s.brand_name || '')} ${escapeHtml(s.model_name)}</strong><br><small style="color:var(--text-muted)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br><small style="font-family:monospace; color:var(--primary);">${escapeHtml(s.imei)}</small></td>
+        <td data-label="Tienda">${escapeHtml(s.store_name)}</td>
+        <td data-label="Precio Crédito">L. ${s.final_price.toLocaleString('en-US')}</td>
+        <td data-label="Prima / Anticipo">L. ${s.prima.toLocaleString('en-US')}</td>
+        <td data-label="Saldo a Liquidar" style="color:#fbbf24; font-weight:bold;">L. ${s.saldo.toLocaleString('en-US')}</td>
+        <td data-label="Acción" class="actions-cell text-right"><button class="btn btn-primary" style="background:var(--success)" onclick="markAsPaid(${s.id})" title="Marcar como Pagado / Liquidar"><i class="fas fa-check-double"></i> Liquidar</button></td>
+    </tr>`;
 }
 
 function filterLiquidationsView() {
@@ -2436,14 +2445,25 @@ async function fetchLiquidationsHistory() { try { const res = await fetchAuth(`$
 function renderLiquidationsHistory() {
     const tbody = document.querySelector('#liquidationsHistoryTable tbody');
     if (!tbody) return;
-    const query = (document.getElementById('liquidationsHistorySearch')?.value || '').toLowerCase();
+    const query = (document.getElementById('liquidationsHistorySearch')?.value || '').trim().toLowerCase();
     
     let filtered = state.liquidationsHistory || [];
     if (query) {
-        filtered = filtered.filter(s => s.imei.toLowerCase().includes(query) || s.model_name.toLowerCase().includes(query));
+        filtered = filtered.filter(s => {
+            const idStr = String(s.id);
+            const formattedId = formatSaleId(s.id).toLowerCase();
+            return (
+                idStr.includes(query) ||
+                formattedId.includes(query) ||
+                (s.imei && s.imei.toLowerCase().includes(query)) ||
+                (s.model_name && s.model_name.toLowerCase().includes(query)) ||
+                (s.brand_name && s.brand_name.toLowerCase().includes(query)) ||
+                (s.store_name && s.store_name.toLowerCase().includes(query))
+            );
+        });
     }
     
-    if (!filtered.length) return tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No hay liquidaciones en el historial</td></tr>';
+    if (!filtered.length) return tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No hay liquidaciones en el historial</td></tr>';
     
     tbody.innerHTML = filtered.map(s => {
         const actionHtml = `
@@ -2451,9 +2471,10 @@ function renderLiquidationsHistory() {
             ${currentUser === 'admin' ? `<button class="btn-icon text-danger" onclick="revertLiquidation(${s.id})" title="Revertir Liquidación"><i class="fas fa-undo"></i></button>` : ''}
         `;
         return `<tr>
+            <td data-label="ID Venta"><span class="badge badge-primary" style="font-family:monospace; font-size:0.85rem; font-weight:700; padding:0.35rem 0.6rem;">${formatSaleId(s.id)}</span></td>
             <td data-label="Fecha Venta">${formatDate(s.sale_date)}</td>
-            <td data-label="Equipo"><strong>${s.model_name}</strong><br><small style="color:var(--text-primary)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br><small>${s.imei}</small></td>
-            <td data-label="Tienda">${s.store_name}</td>
+            <td data-label="Equipo"><strong>${escapeHtml(s.brand_name || '')} ${escapeHtml(s.model_name)}</strong><br><small style="color:var(--text-muted)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br><small style="font-family:monospace; color:var(--primary);">${escapeHtml(s.imei)}</small></td>
+            <td data-label="Tienda">${escapeHtml(s.store_name)}</td>
             <td data-label="Precio Final">L. ${s.final_price.toLocaleString('en-US')}</td>
             <td data-label="Prima">L. ${s.prima.toLocaleString('en-US')}</td>
             <td data-label="Estado"><span class="badge badge-success">Pagado</span></td>

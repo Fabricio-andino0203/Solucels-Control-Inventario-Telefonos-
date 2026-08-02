@@ -933,7 +933,7 @@ app.post('/api/sales', upload.single('invoice'), async (req, res) => {
 
         if (actPriceType === 'Crédito') {
             saldo = final_price - actPrima;
-            payment_status = 'Pendiente Crédito Financiera';
+            payment_status = 'Pendiente';
         } else {
             actPrima = final_price;
             saldo = 0;
@@ -1002,10 +1002,13 @@ app.delete('/api/sales/:id', requireAdmin, (req, res) => {
 app.get('/api/liquidations', (req, res) => {
     try {
         res.json(db.prepare(`
-            SELECT sl.*, p.imei, m.name as model_name, m.ram, m.storage, s.name as store_name 
-            FROM sales sl JOIN phones p ON sl.phone_id = p.id
-            JOIN phone_models m ON p.model_id = m.id JOIN stores s ON sl.store_id = s.id
-            WHERE sl.payment_status = 'Pendiente'
+            SELECT sl.*, p.imei, m.name as model_name, m.ram, m.storage, s.name as store_name, b.name as brand_name
+            FROM sales sl 
+            JOIN phones p ON sl.phone_id = p.id
+            JOIN phone_models m ON p.model_id = m.id 
+            JOIN stores s ON sl.store_id = s.id
+            JOIN brands b ON m.brand_id = b.id
+            WHERE sl.payment_status LIKE 'Pendiente%' OR (sl.sale_type = 'Crédito' AND sl.saldo > 0) OR (sl.final_price_type = 'Crédito' AND sl.saldo > 0)
             ORDER BY sl.sale_date ASC
         `).all());
     } catch (err) { res.status(500).json({error: err.message}); }
@@ -1023,10 +1026,13 @@ app.put('/api/liquidations/:id/pay', (req, res) => {
 app.get('/api/liquidations/history', (req, res) => {
     try {
         res.json(db.prepare(`
-            SELECT sl.*, p.imei, m.name as model_name, m.ram, m.storage, s.name as store_name 
-            FROM sales sl JOIN phones p ON sl.phone_id = p.id
-            JOIN phone_models m ON p.model_id = m.id JOIN stores s ON sl.store_id = s.id
-            WHERE sl.payment_status = 'Pagado' AND sl.sale_type = 'Crédito'
+            SELECT sl.*, p.imei, m.name as model_name, m.ram, m.storage, s.name as store_name, b.name as brand_name
+            FROM sales sl 
+            JOIN phones p ON sl.phone_id = p.id
+            JOIN phone_models m ON p.model_id = m.id 
+            JOIN stores s ON sl.store_id = s.id
+            JOIN brands b ON m.brand_id = b.id
+            WHERE sl.payment_status = 'Pagado' AND (sl.sale_type = 'Crédito' OR sl.final_price_type = 'Crédito')
             ORDER BY sl.sale_date DESC LIMIT 500
         `).all());
     } catch (err) { res.status(500).json({error: err.message}); }
