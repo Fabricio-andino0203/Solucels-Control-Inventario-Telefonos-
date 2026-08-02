@@ -232,6 +232,7 @@ function initDB() {
     // === SAFE MIGRATION: User roles & stores ===
     try { db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'"); } catch(e) { /* exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN store_id INTEGER REFERENCES stores(id)'); } catch(e) { /* exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN full_name TEXT'); } catch(e) { /* exists */ }
     
     // === SAFE MIGRATION: Sales invoice & sold_by ===
     try { db.exec('ALTER TABLE sales ADD COLUMN sold_by INTEGER'); } catch(e) { /* exists */ }
@@ -266,38 +267,69 @@ function initDB() {
     db.exec('CREATE INDEX IF NOT EXISTS idx_audit_items_phone ON audit_items(phone_id);');
     db.exec('CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);');
 
-    // === SAFETY SEEDER: Ensure default Admin User & Store Catalog exist ===
-    const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
-    if (userCount === 0) {
-        console.log("⚠️ TABLA DE USUARIOS VACÍA: Creando usuario administrador por defecto (admin / admin123)...");
-        const hash = bcrypt.hashSync('admin123', 10);
-        db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)').run('admin', hash, 'admin');
+    // === SAFETY SEEDER: Ensure default Admin & Vendedor Users exist ===
+    const storeCount = db.prepare('SELECT COUNT(*) as count FROM stores').get().count;
+    if (storeCount === 0) {
+        const insertStore = db.prepare('INSERT INTO stores (name) VALUES (?)');
+        for(let i=1; i<=7; i++) insertStore.run(`Tienda ${i}`);
         
-        const storeCount = db.prepare('SELECT COUNT(*) as count FROM stores').get().count;
-        if (storeCount === 0) {
-            const insertStore = db.prepare('INSERT INTO stores (name) VALUES (?)');
-            for(let i=1; i<=7; i++) insertStore.run(`Tienda ${i}`);
-            
-            const insertBrand = db.prepare('INSERT INTO brands (name) VALUES (?)');
-            ['Apple', 'Samsung', 'Xiaomi'].forEach(b => insertBrand.run(b));
-            
-            const bApple = db.prepare("SELECT id FROM brands WHERE name='Apple'").get().id;
-            const bSamsung = db.prepare("SELECT id FROM brands WHERE name='Samsung'").get().id;
-            
-            db.prepare(`INSERT INTO phone_models (name, brand_id, image_url, price_cash, credit_enabled, price_credit) 
-                VALUES (?, ?, ?, ?, ?, ?)`).run(
-                'iPhone 15 Pro Max', bApple, 'https://fdn2.gsmarena.com/vv/pics/apple/apple-iphone-15-pro-max-1.jpg', 
-                35000, 1, 40000
-            );
-            db.prepare(`INSERT INTO phone_models (name, brand_id, image_url, price_cash, credit_enabled, price_credit) 
-                VALUES (?, ?, ?, ?, ?, ?)`).run(
-                'Galaxy S24 Ultra', bSamsung, 'https://fdn2.gsmarena.com/vv/pics/samsung/samsung-galaxy-s24-ultra-5g-sm-s928-1.jpg', 
-                32000, 1, 38000
-            );
-        }
-    } else {
-        db.prepare("UPDATE users SET role='admin' WHERE username='admin'").run();
+        const insertBrand = db.prepare('INSERT INTO brands (name) VALUES (?)');
+        ['Apple', 'Samsung', 'Xiaomi'].forEach(b => insertBrand.run(b));
+        
+        const bApple = db.prepare("SELECT id FROM brands WHERE name='Apple'").get().id;
+        const bSamsung = db.prepare("SELECT id FROM brands WHERE name='Samsung'").get().id;
+        
+        db.prepare(`INSERT INTO phone_models (name, brand_id, image_url, price_cash, credit_enabled, price_credit) 
+            VALUES (?, ?, ?, ?, ?, ?)`).run(
+            'iPhone 15 Pro Max', bApple, 'https://fdn2.gsmarena.com/vv/pics/apple/apple-iphone-15-pro-max-1.jpg', 
+            35000, 1, 40000
+        );
+        db.prepare(`INSERT INTO phone_models (name, brand_id, image_url, price_cash, credit_enabled, price_credit) 
+            VALUES (?, ?, ?, ?, ?, ?)`).run(
+            'Galaxy S24 Ultra', bSamsung, 'https://fdn2.gsmarena.com/vv/pics/samsung/samsung-galaxy-s24-ultra-5g-sm-s928-1.jpg', 
+            32000, 1, 38000
+        );
     }
+
+    const adminUser = db.prepare("SELECT * FROM users WHERE username = 'admin'").get();
+    const hashAdmin = bcrypt.hashSync('admin123', 10);
+    if (!adminUser) {
+        console.log("⚠️ Creando usuario administrador por defecto (admin / admin123)...");
+        db.prepare('INSERT INTO users (full_name, username, password_hash, role) VALUES (?, ?, ?, ?)').run('Administrador General', 'admin', hashAdmin, 'admin');
+    } else {
+        console.log("🔑 Actualizando contraseña de admin por defecto a 'admin123'...");
+        db.prepare("UPDATE users SET password_hash=?, role='admin', full_name=COALESCE(full_name, 'Administrador General') WHERE username='admin'").run(hashAdmin);
+    }
+
+    const vendedorUser = db.prepare("SELECT * FROM users WHERE username = 'vendedor'").get();
+    if (!vendedorUser) {
+        console.log("⚠️ Creando usuario vendedor por defecto (vendedor / vendedor123)...");
+        const hashVendedor = bcrypt.hashSync('vendedor123', 10);
+        const firstStore = db.prepare("SELECT id FROM stores LIMIT 1").get();
+        const storeId = firstStore ? firstStore.id : 1;
+        db.prepare('INSERT INTO users (full_name, username, password_hash, role, store_id) VALUES (?, ?, ?, ?, ?)').run('Vendedor Tienda 1', 'vendedor', hashVendedor, 'vendedor', storeId);
+    }
+
+    // === MIGRACIÓN DE USUARIOS LOCALES A PRODUCCIÓN ===
+    const localUsersSeed = [
+        { full_name: 'PATRICIA ORDOÑEZ', username: 'Paty', password_hash: '$2b$10$wdCSSv5PdcGRVRleJoq1TudGXeON/EGUv7m/yxOhNufMH26ksqO7i', role: 'admin', store_id: null },
+        { full_name: 'Inversiones Solucels 1', username: 'solucels1', password_hash: '$2b$10$Q0LVecCxnkE2SUSkbNT6UO1tpmF4IY59NKgqF5XBMpSB3GWY1nzVy', role: 'vendedor', store_id: 1 },
+        { full_name: 'Inversiones Solucels 2', username: 'solucels2', password_hash: '$2b$10$RSKZ4R8BGngaol9Ipigks.BOiBIyywCZ8IFXYbi.NhkYJULppkzdu', role: 'vendedor', store_id: 2 },
+        { full_name: 'Inversiones Solucels 4', username: 'solucels4', password_hash: '$2b$10$N22JoOhNTzQs9RYcSqZkKufu/HvtjPgrg87RQQV3nGQx7h8sVGN1m', role: 'vendedor', store_id: 4 },
+        { full_name: 'Inversiones Solucels 5', username: 'solucels5', password_hash: '$2b$10$j/WAZl.3Rd6WuBB86TlwXOZNBH2QemHYH3zJGTj0d5awdlma6.4ES', role: 'vendedor', store_id: 5 },
+        { full_name: 'Inversiones Solucels 6', username: 'solucels6', password_hash: '$2b$10$lneuIuJAakb/VJ18/MaNUeG5Ukz0jmZBMouHzmcgew7LROAQvnnQy', role: 'vendedor', store_id: 6 }
+    ];
+
+    const checkUserStmt = db.prepare('SELECT id FROM users WHERE username = ?');
+    const insertUserStmt = db.prepare('INSERT INTO users (full_name, username, password_hash, role, store_id) VALUES (?, ?, ?, ?, ?)');
+
+    localUsersSeed.forEach(u => {
+        const exists = checkUserStmt.get(u.username);
+        if (!exists) {
+            console.log(`🌱 Migrando usuario a producción: ${u.username} (${u.full_name})`);
+            insertUserStmt.run(u.full_name, u.username, u.password_hash, u.role, u.store_id);
+        }
+    });
 }
 initDB();
 
@@ -491,66 +523,71 @@ app.get('/api/dashboard/recent-sales', requireAdmin, (req, res) => {
     } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
+
+
 // ==========================================
 // USERS & SECURITY
 // ==========================================
 
 app.get('/api/users', requireAdmin, (req, res) => {
-    console.log(`📥 [BACKEND LOG] Petición recibida en GET /api/users por el usuario: ${req.user ? req.user.username : 'Sin Token'}`);
     try {
         const users = db.prepare(`
-            SELECT u.id, u.full_name, u.username, u.role, u.store_id, s.name as store_name
+            SELECT u.id, u.full_name, u.username, u.role, u.store_id, 
+                   COALESCE(s.name, u.store_id) as store_name
             FROM users u
-            LEFT JOIN stores s ON u.store_id = s.id
+            LEFT JOIN stores s ON u.store_id = s.id OR u.store_id = s.name
             ORDER BY u.id ASC
         `).all();
-        console.log(`📤 [BACKEND LOG] Respondiendo ${users ? users.length : 0} usuarios con Status 200`);
         return res.status(200).json(users || []);
-    } catch(err) { 
-        console.error("❌ [BACKEND LOG ERROR en GET /api/users]:", err.message);
-        // BLINDAJE ABSOLUTO: Responder Status 200 con array vacío para evitar cualquier error 500 en frontend
+    } catch(err) {
         return res.status(200).json([]);
     }
 });
 
 app.post('/api/users', requireAdmin, (req, res) => {
     try {
-        const { full_name, username, password, role, store_id } = req.body;
+        const { full_name, username, password, role, store_id, store_name } = req.body;
         if (!username || !password) {
             return res.status(400).json({ error: "Usuario y contraseña son requeridos." });
         }
         const userRole = (role === 'vendedor') ? 'vendedor' : 'admin';
-        const assignedStore = (userRole === 'vendedor' && store_id) ? parseInt(store_id) : null;
+        
+        let assignedStore = null;
+        if (userRole === 'vendedor') {
+            const stVal = store_name || store_id;
+            if (stVal) {
+                const foundStore = db.prepare('SELECT id FROM stores WHERE id = ? OR name = ?').get(stVal, stVal);
+                assignedStore = foundStore ? foundStore.id : stVal;
+            }
+        }
+        
         const fullNameVal = (full_name && full_name.trim()) ? full_name.trim() : username.trim();
         const hash = bcrypt.hashSync(password, 10);
         const info = db.prepare('INSERT INTO users (full_name, username, password_hash, role, store_id) VALUES (?, ?, ?, ?, ?)').run(fullNameVal, username.trim(), hash, userRole, assignedStore);
         res.json({ id: info.lastInsertRowid, success: true });
-    } catch(err) { 
+    } catch(err) {
         if (err.message && err.message.includes('UNIQUE')) {
             return res.status(400).json({ error: "El nombre de usuario ya existe en el sistema." });
         }
-        res.status(400).json({ error: err.message }); 
+        res.status(400).json({ error: err.message });
     }
-});
-
-app.delete('/api/users/:id', requireAdmin, (req, res) => {
-    try {
-        const targetUser = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
-        if (!targetUser) return res.status(404).json({ error: "Usuario no encontrado." });
-        if (targetUser.username === 'admin') return res.status(400).json({ error: "No se puede eliminar al Administrador Maestro del sistema." });
-        if (targetUser.id == req.user.id) return res.status(400).json({ error: "No puedes eliminar tu propia cuenta en sesión." });
-        
-        db.prepare('DELETE FROM users WHERE id=?').run(req.params.id);
-        res.json({ success: true });
-    } catch(err) { res.status(400).json({ error: err.message }); }
 });
 
 app.put('/api/users/:id', requireAdmin, (req, res) => {
     try {
-        const { full_name, username, password, role, store_id } = req.body;
+        const { full_name, username, password, role, store_id, store_name } = req.body;
         if (!username || username.trim() === '') return res.status(400).json({ error: "Nombre de usuario inválido." });
         const userRole = (role === 'vendedor') ? 'vendedor' : 'admin';
-        const assignedStore = (userRole === 'vendedor' && store_id) ? parseInt(store_id) : null;
+        
+        let assignedStore = null;
+        if (userRole === 'vendedor') {
+            const stVal = store_name || store_id;
+            if (stVal) {
+                const foundStore = db.prepare('SELECT id FROM stores WHERE id = ? OR name = ?').get(stVal, stVal);
+                assignedStore = foundStore ? foundStore.id : stVal;
+            }
+        }
+        
         const fullNameVal = (full_name && full_name.trim()) ? full_name.trim() : username.trim();
 
         if (password && password.trim() !== '') {
@@ -562,21 +599,22 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
                 .run(fullNameVal, username.trim(), userRole, assignedStore, req.params.id);
         }
         res.json({ success: true });
-    } catch(err) { 
+    } catch(err) {
         if (err.message && err.message.includes('UNIQUE')) return res.status(400).json({ error: "El nombre de usuario ya existe." });
-        res.status(400).json({ error: err.message }); 
+        res.status(400).json({ error: err.message });
     }
 });
 
-app.put('/api/users/password', (req, res) => {
+app.delete('/api/users/:id', requireAdmin, (req, res) => {
     try {
-        const { currentPassword, newPassword } = req.body;
-        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-        if (!bcrypt.compareSync(currentPassword, user.password_hash)) return res.status(401).json({ error: "Contraseña actual incorrecta." });
-        const hash = bcrypt.hashSync(newPassword, 10);
-        db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, req.user.id);
+        const targetUser = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+        if (!targetUser) return res.status(404).json({ error: "Usuario no encontrado." });
+        if (targetUser.username === 'admin') return res.status(400).json({ error: "No se puede eliminar al Administrador Maestro." });
+        if (targetUser.id == req.user.id) return res.status(400).json({ error: "No puedes eliminar tu propia cuenta en sesión." });
+
+        db.prepare('DELETE FROM users WHERE id=?').run(req.params.id);
         res.json({ success: true });
-    } catch(err) { res.status(400).json({error: err.message}); }
+    } catch(err) { res.status(400).json({ error: err.message }); }
 });
 
 // ==========================================
