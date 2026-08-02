@@ -955,10 +955,18 @@ app.post('/api/sales', upload.single('invoice'), async (req, res) => {
 app.get('/api/sales', (req, res) => {
     try {
         let sql = `
-            SELECT sl.*, p.imei, m.name as model_name, m.ram, m.storage, s.name as store_name, b.name as brand_name, s.id as store_id, m.brand_id
-            FROM sales sl JOIN phones p ON sl.phone_id = p.id
-            JOIN phone_models m ON p.model_id = m.id JOIN stores s ON sl.store_id = s.id
+            SELECT sl.*, p.imei, m.name as model_name, m.ram, m.storage, s.name as store_name, b.name as brand_name, s.id as store_id, m.brand_id,
+                   w.id as warranty_id, w.receipt_path as w_receipt_path, w.receipt_thumb as w_receipt_thumb,
+                   w.warranty_path as w_warranty_path, w.warranty_thumb as w_warranty_thumb,
+                   w.client_name as w_client_name, w.client_phone as w_client_phone, w.observations as w_observations,
+                   u.full_name as seller_name, u.username as seller_username
+            FROM sales sl 
+            JOIN phones p ON sl.phone_id = p.id
+            JOIN phone_models m ON p.model_id = m.id 
+            JOIN stores s ON sl.store_id = s.id
             JOIN brands b ON m.brand_id = b.id
+            LEFT JOIN warranties w ON w.sale_id = sl.id
+            LEFT JOIN users u ON sl.sold_by = u.id
         `;
         let params = [];
         if (req.user && req.user.role === 'vendedor' && req.user.store_id) {
@@ -1414,22 +1422,26 @@ app.get('/api/warranties/:saleId', (req, res) => {
 
 app.get('/api/warranties', (req, res) => {
     try {
-        let sql = `SELECT w.*, s.sale_date, p.imei, m.name as model_name, 
-                   b.name as brand_name, st.name as store_name
-                   FROM warranties w
-                   JOIN sales s ON w.sale_id = s.id
-                   JOIN phones p ON s.phone_id = p.id
-                   JOIN phone_models m ON p.model_id = m.id
-                   JOIN brands b ON m.brand_id = b.id
-                   JOIN stores st ON s.store_id = st.id`;
-        
-        if (req.user.role === 'vendedor') {
-            sql += ` WHERE w.created_by = ?`;
-            const rows = db.prepare(sql + ' ORDER BY w.created_at DESC LIMIT 200').all(req.user.id);
-            return res.json(rows);
+        let sql = `
+            SELECT s.id as sale_id, s.sale_date, s.client_name as sale_client_name, s.client_phone as sale_client_phone, 
+                   s.final_price, s.sale_type, s.invoice_path as s_invoice_path, s.invoice_thumb as s_invoice_thumb,
+                   p.imei, m.name as model_name, b.name as brand_name, st.name as store_name, st.id as store_id,
+                   w.id as warranty_id, w.client_name, w.client_phone, w.receipt_path, w.receipt_thumb, 
+                   w.warranty_path, w.warranty_thumb, w.observations, w.created_at as warranty_date
+            FROM sales s
+            JOIN phones p ON s.phone_id = p.id
+            JOIN phone_models m ON p.model_id = m.id
+            JOIN brands b ON m.brand_id = b.id
+            JOIN stores st ON s.store_id = st.id
+            LEFT JOIN warranties w ON w.sale_id = s.id
+        `;
+        let params = [];
+        if (req.user && req.user.role === 'vendedor' && req.user.store_id) {
+            sql += ` WHERE s.store_id = ?`;
+            params.push(req.user.store_id);
         }
-        
-        res.json(db.prepare(sql + ' ORDER BY w.created_at DESC LIMIT 500').all());
+        sql += ` ORDER BY s.sale_date DESC LIMIT 500`;
+        res.json(db.prepare(sql).all(...params));
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

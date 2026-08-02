@@ -1112,12 +1112,67 @@ function getFilteredSales() {
     });
 }
 
+function getWarrantyStatus(saleDateStr) {
+    if (!saleDateStr) return { label: 'Sin Fecha', style: 'background:rgba(107,114,128,0.2); color:#9ca3af;', isExpired: true, daysLeft: 0, text: 'Garantía Desconocida' };
+    const saleDate = new Date(saleDateStr);
+    if (isNaN(saleDate.getTime())) return { label: 'Fecha Inválida', style: 'background:rgba(107,114,128,0.2); color:#9ca3af;', isExpired: true, daysLeft: 0, text: 'Fecha Inválida' };
+
+    const now = new Date();
+    const expiryDate = new Date(saleDate.getTime() + (30 * 24 * 60 * 60 * 1000));
+    
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const expiryMidnight = new Date(expiryDate.getFullYear(), expiryDate.getMonth(), expiryDate.getDate());
+
+    const diffTime = expiryMidnight.getTime() - todayMidnight.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+        const absDays = Math.abs(diffDays);
+        return {
+            label: `Vencida (${absDays}d)`,
+            badgeClass: 'badge-danger',
+            style: 'background:rgba(239,68,68,0.18); color:#ef4444; border:1px solid rgba(239,68,68,0.4);',
+            isExpired: true,
+            daysLeft: diffDays,
+            text: `Garantía Vencida hace ${absDays} día(s)`
+        };
+    } else if (diffDays === 0) {
+        return {
+            label: 'Vence Hoy',
+            badgeClass: 'badge-warning',
+            style: 'background:rgba(245,158,11,0.18); color:#f59e0b; border:1px solid rgba(245,158,11,0.4);',
+            isExpired: false,
+            daysLeft: 0,
+            text: 'La garantía vence el día de hoy'
+        };
+    } else if (diffDays <= 5) {
+        return {
+            label: `Quedan ${diffDays} días`,
+            badgeClass: 'badge-warning',
+            style: 'background:rgba(245,158,11,0.18); color:#f59e0b; border:1px solid rgba(245,158,11,0.4);',
+            isExpired: false,
+            daysLeft: diffDays,
+            text: `Por vencer: Quedan ${diffDays} día(s) de garantía`
+        };
+    } else {
+        return {
+            label: `Quedan ${diffDays} días`,
+            badgeClass: 'badge-success',
+            style: 'background:rgba(16,185,129,0.18); color:#10b981; border:1px solid rgba(16,185,129,0.4);',
+            isExpired: false,
+            daysLeft: diffDays,
+            text: `Vigente - Quedan ${diffDays} día(s) de garantía`
+        };
+    }
+}
+
 function renderSalesTable() {
     const dataToRender = getFilteredSales();
 
     const tbody = document.querySelector('#salesTable tbody');
-    if (!dataToRender.length) return tbody.innerHTML = '<tr><td colspan="6" class="text-center">No hay ventas registradas en este filtro</td></tr>';
-    
+    if (!tbody) return;
+    if (!dataToRender.length) return tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:var(--text-muted); padding:2rem;">No hay movimientos de venta registrados</td></tr>';
+
     let totalSales = 0;
     tbody.innerHTML = dataToRender.map(s => {
         totalSales += s.final_price;
@@ -1125,11 +1180,144 @@ function renderSalesTable() {
         const [datePart, timePart, ampm] = formattedFullDate.split(' ');
         const dateHtml = `<strong>${datePart}</strong><br><small style="color:var(--text-muted)">${timePart} ${ampm || ''}</small>`;
 
-        const actionHtml = currentUser === 'admin' ? `<button class="btn-icon text-danger" onclick="revertSale(${s.id})" title="Eliminar Venta"><i class="fas fa-undo"></i></button>` : '';
-        return `<tr><td data-label="Fecha">${dateHtml}</td><td data-label="Equipo"><strong>${s.model_name}</strong><br><small style="color:var(--text-primary)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br><small style="font-family:monospace">${s.imei}</small></td><td data-label="Tienda Venta">${s.store_name}</td><td data-label="Tipo"><span class="badge ${s.sale_type === 'Contado' ? 'badge-success' : 'badge-warning'}">${s.final_price_type || s.sale_type}</span></td><td data-label="Notas"><span style="font-size:0.85rem; color:var(--text-muted);">${s.notes || '-'}</span></td><td data-label="Precio (L.)" style="color:var(--success); font-weight:bold;">L. ${s.final_price.toLocaleString('en-US')}</td><td data-label="Acciones" class="actions-cell text-right">${actionHtml}</td></tr>`
+        const wStatus = getWarrantyStatus(s.sale_date);
+        const sellerName = s.seller_name || s.seller_username || 'Sistema';
+
+        // Receipt & Warranty Anchored Images
+        const receiptThumb = s.invoice_thumb || s.w_receipt_thumb;
+        const receiptPath = s.invoice_path || s.w_receipt_path;
+        const warrantyThumb = s.w_warranty_thumb;
+        const warrantyPath = s.w_warranty_path;
+
+        let docsHtml = '<div style="display:flex; gap:0.4rem; align-items:center;">';
+        if (receiptThumb) {
+            docsHtml += `<img src="${receiptThumb}" onclick="viewImage('${receiptPath}')" title="Ver Recibo de Venta" loading="lazy" style="width:36px; height:36px; border-radius:6px; object-fit:cover; border:1px solid var(--primary); cursor:pointer;">`;
+        }
+        if (warrantyThumb) {
+            docsHtml += `<img src="${warrantyThumb}" onclick="viewImage('${warrantyPath}')" title="Ver Documento de Garantía" loading="lazy" style="width:36px; height:36px; border-radius:6px; object-fit:cover; border:1px solid var(--success); cursor:pointer;">`;
+        }
+        if (!receiptThumb && !warrantyThumb) {
+            docsHtml += `<span style="font-size:0.75rem; color:var(--text-muted); font-style:italic"><i class="fas fa-image"></i> Sin adjuntos</span>`;
+        }
+        docsHtml += '</div>';
+
+        const actionBtns = `
+            <div style="display:flex; justify-content:flex-end; gap:0.4rem; align-items:center;">
+                <button class="btn-icon text-primary" onclick="showSaleDetail(${s.id})" title="Información Detallada"><i class="fas fa-info-circle"></i></button>
+                ${currentUser === 'admin' ? `<button class="btn-icon text-danger" onclick="revertSale(${s.id})" title="Eliminar Venta"><i class="fas fa-undo"></i></button>` : ''}
+            </div>
+        `;
+
+        return `
+            <tr>
+                <td data-label="Fecha & Hora">${dateHtml}</td>
+                <td data-label="Equipo (IMEI)">
+                    <strong>${escapeHtml(s.brand_name || '')} ${escapeHtml(s.model_name)}</strong><br>
+                    <small style="color:var(--text-muted)">${s.ram || 'N/A'} / ${s.storage || 'N/A'}</small><br>
+                    <small style="font-family:monospace; color:var(--primary);">${escapeHtml(s.imei)}</small>
+                </td>
+                <td data-label="Vendedor / Tienda">
+                    <strong><i class="fas fa-user-tag" style="color:var(--primary); margin-right:0.3rem;"></i>${escapeHtml(sellerName)}</strong><br>
+                    <small style="color:var(--text-muted)"><i class="fas fa-store"></i> ${escapeHtml(s.store_name)}</small>
+                </td>
+                <td data-label="Tipo & Precio">
+                    <span class="badge ${s.sale_type === 'Contado' ? 'badge-success' : 'badge-warning'}">${s.final_price_type || s.sale_type}</span><br>
+                    <strong style="color:var(--success); font-size:0.95rem;">L. ${s.final_price.toLocaleString('en-US')}</strong>
+                </td>
+                <td data-label="Plazo Garantía (30d)">
+                    <span class="badge" style="${wStatus.style}; font-size:0.78rem; font-weight:600;">
+                        <i class="fas ${wStatus.isExpired ? 'fa-times-circle' : 'fa-shield-alt'}"></i> ${wStatus.label}
+                    </span>
+                </td>
+                <td data-label="Comprobante & Garantía">${docsHtml}</td>
+                <td data-label="Acciones" class="text-right">${actionBtns}</td>
+            </tr>
+        `;
     }).join('');
-    
-    document.getElementById('stat-total-sales').innerText = totalSales.toLocaleString('en-US', { minimumFractionDigits: 2 });
+
+    const statTotal = document.getElementById('stat-total-sales');
+    if (statTotal) statTotal.innerText = totalSales.toLocaleString('en-US', { minimumFractionDigits: 2 });
+}
+
+function showSaleDetail(saleId) {
+    const s = (state.sales || []).find(x => x.id === saleId);
+    if (!s) return;
+
+    const wStatus = getWarrantyStatus(s.sale_date);
+    const sellerName = s.seller_name || s.seller_username || 'Sistema';
+
+    const receiptPath = s.invoice_path || s.w_receipt_path;
+    const warrantyPath = s.w_warranty_path;
+
+    const content = `
+        <div style="background:var(--bg-color); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:1.25rem; margin-bottom:1.25rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:0.75rem; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+                <div>
+                    <h3 style="margin:0; color:var(--text-main); font-size:1.15rem;">Venta #${s.id} — ${escapeHtml(s.brand_name || '')} ${escapeHtml(s.model_name)}</h3>
+                    <small style="color:var(--text-muted);"><i class="fas fa-calendar-alt"></i> ${formatDate(s.sale_date)}</small>
+                </div>
+                <span class="badge ${s.sale_type === 'Contado' ? 'badge-success' : 'badge-warning'}" style="font-size:0.9rem;">
+                    ${s.final_price_type || s.sale_type}
+                </span>
+            </div>
+
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; margin-bottom:1rem;">
+                <div>
+                    <span style="color:var(--text-muted); font-size:0.8rem; display:block;">EQUIPO E IMEI</span>
+                    <strong style="color:var(--text-main);">${escapeHtml(s.model_name)} (${s.ram || 'N/A'} / ${s.storage || 'N/A'})</strong>
+                    <div style="font-family:monospace; color:var(--primary); font-size:0.9rem; margin-top:0.2rem;"><i class="fas fa-barcode"></i> ${escapeHtml(s.imei)}</div>
+                </div>
+                <div>
+                    <span style="color:var(--text-muted); font-size:0.8rem; display:block;">VENDEDOR Y SUCURSAL</span>
+                    <strong style="color:var(--text-main);"><i class="fas fa-user-circle"></i> ${escapeHtml(sellerName)}</strong>
+                    <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;"><i class="fas fa-store"></i> ${escapeHtml(s.store_name)}</div>
+                </div>
+                <div>
+                    <span style="color:var(--text-muted); font-size:0.8rem; display:block;">PRECIO FINAL COBRADO</span>
+                    <strong style="color:var(--success); font-size:1.2rem;">L. ${s.final_price.toLocaleString('en-US')}</strong>
+                    ${currentUser === 'admin' && s.cost_price ? `<div style="color:var(--text-muted); font-size:0.8rem;">Costo: L. ${s.cost_price.toLocaleString('en-US')}</div>` : ''}
+                </div>
+                <div>
+                    <span style="color:var(--text-muted); font-size:0.8rem; display:block;">PLAZO DE GARANTÍA (30 DÍAS)</span>
+                    <span class="badge" style="${wStatus.style}; font-size:0.85rem; margin-top:0.25rem;">
+                        <i class="fas ${wStatus.isExpired ? 'fa-times-circle' : 'fa-shield-alt'}"></i> ${wStatus.text}
+                    </span>
+                </div>
+            </div>
+
+            ${s.client_name || s.w_client_name ? `
+                <div style="background:rgba(0,0,0,0.2); border-radius:var(--radius-sm); padding:0.75rem; margin-bottom:1rem;">
+                    <strong style="color:var(--text-main); font-size:0.88rem;"><i class="fas fa-address-card"></i> Datos del Cliente:</strong>
+                    <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
+                        Nombre: <strong>${escapeHtml(s.client_name || s.w_client_name)}</strong> | Teléfono: <strong>${escapeHtml(s.client_phone || s.w_client_phone || 'N/A')}</strong>
+                    </div>
+                    ${s.notes || s.w_observations ? `<div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">Notas: ${escapeHtml(s.notes || s.w_observations)}</div>` : ''}
+                </div>
+            ` : ''}
+        </div>
+
+        <h4 style="margin:0 0 0.75rem 0; color:var(--text-main);"><i class="fas fa-paperclip"></i> Archivos y Documentos Anclados</h4>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:1rem;">
+            <div style="background:var(--bg-color); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:1rem; text-align:center;">
+                <h5 style="margin:0 0 0.5rem 0; color:var(--text-main);"><i class="fas fa-file-invoice"></i> Recibo / Comprobante de Venta</h5>
+                ${receiptPath ? `
+                    <img src="${receiptPath}" style="max-width:100%; max-height:200px; border-radius:6px; object-fit:contain; border:1px solid var(--border-color); cursor:pointer;" onclick="viewImage('${receiptPath}')">
+                    <button class="btn btn-secondary mt-2" onclick="viewImage('${receiptPath}')" style="width:100%; font-size:0.85rem;"><i class="fas fa-search-plus"></i> Ampliar Imagen</button>
+                ` : '<p style="color:var(--text-muted); font-size:0.85rem; margin:1rem 0;">No se subió foto del recibo de venta.</p>'}
+            </div>
+
+            <div style="background:var(--bg-color); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:1rem; text-align:center;">
+                <h5 style="margin:0 0 0.5rem 0; color:var(--text-main);"><i class="fas fa-file-contract"></i> Póliza de Garantía</h5>
+                ${warrantyPath ? `
+                    <img src="${warrantyPath}" style="max-width:100%; max-height:200px; border-radius:6px; object-fit:contain; border:1px solid var(--border-color); cursor:pointer;" onclick="viewImage('${warrantyPath}')">
+                    <button class="btn btn-secondary mt-2" onclick="viewImage('${warrantyPath}')" style="width:100%; font-size:0.85rem;"><i class="fas fa-search-plus"></i> Ampliar Imagen</button>
+                ` : '<p style="color:var(--text-muted); font-size:0.85rem; margin:1rem 0;">No se subió documento de garantía.</p>'}
+            </div>
+        </div>
+    `;
+
+    document.getElementById('saleDetailContent').innerHTML = content;
+    openModal('saleDetailModal');
 }
 
 function filterSalesView() {
@@ -1582,16 +1770,36 @@ async function deleteUserConfig(id) {
 
 // ADD PHONE (QUICK FORM)
 function openScanner(targetInputId) {
-    currentScannerTargetId = targetInputId; document.getElementById('scannerModal').classList.add('active');
-    html5QrcodeScanner = new Html5Qrcode("reader");
-    html5QrcodeScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 100 } },
-        (decodedText) => { document.getElementById(currentScannerTargetId).value = decodedText.toUpperCase(); closeScanner(); showToast('Identificador Capturado'); },
-        (error) => { }
-    ).catch(err => { showToast("Error iniciando cámara: " + err, true); });
+    currentScannerTargetId = targetInputId; 
+    openModal('scannerModal');
+    setTimeout(async () => {
+        if (typeof Html5Qrcode === 'undefined') { showToast("Librería de escáner no disponible.", true); return; }
+        const readerId = "quickFormScannerReader";
+        if (html5QrcodeScanner) { try { await html5QrcodeScanner.stop(); html5QrcodeScanner.clear(); } catch(e) {} html5QrcodeScanner = null; }
+        html5QrcodeScanner = new Html5Qrcode(readerId);
+        const config = { fps: 10, qrbox: { width: 260, height: 140 } };
+        try {
+            await html5QrcodeScanner.start({ facingMode: "environment" }, config,
+                (decodedText) => { document.getElementById(currentScannerTargetId).value = decodedText.trim().toUpperCase(); closeScanner(); showToast('IMEI Capturado'); },
+                (error) => { }
+            );
+        } catch (err) {
+            try {
+                const cameras = await Html5Qrcode.getCameras();
+                if (cameras && cameras.length > 0) {
+                    const backCam = cameras.find(c => c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('trasera')) || cameras[cameras.length - 1];
+                    await html5QrcodeScanner.start(backCam.id, config,
+                        (decodedText) => { document.getElementById(currentScannerTargetId).value = decodedText.trim().toUpperCase(); closeScanner(); showToast('IMEI Capturado'); },
+                        (error) => { }
+                    );
+                } else { throw err; }
+            } catch(e) { showToast("No se pudo acceder a la cámara en el teléfono: " + e.message, true); }
+        }
+    }, 250);
 }
 function closeScanner() {
-    if (html5QrcodeScanner) { html5QrcodeScanner.stop().then(() => { html5QrcodeScanner.clear(); }).catch(e => console.error(e)); }
-    document.getElementById('scannerModal').classList.remove('active');
+    if (html5QrcodeScanner) { html5QrcodeScanner.stop().then(() => { html5QrcodeScanner.clear(); html5QrcodeScanner = null; }).catch(e => console.error(e)); }
+    closeModal('scannerModal');
 }
 
 async function savePhone(e) {
@@ -2669,37 +2877,60 @@ function renderWarrantiesTable() {
     const tbody = document.querySelector('#warrantiesTable tbody');
     if (!tbody) return;
     const q = document.getElementById('warrantiesSearch')?.value.toLowerCase() || '';
-    
+
     let filtered = state.warranties || [];
     if (q) {
         filtered = filtered.filter(w => 
             (w.imei && w.imei.toLowerCase().includes(q)) ||
             (w.client_name && w.client_name.toLowerCase().includes(q)) ||
+            (w.sale_client_name && w.sale_client_name.toLowerCase().includes(q)) ||
             (w.model_name && w.model_name.toLowerCase().includes(q))
         );
     }
-    
-    tbody.innerHTML = filtered.map(w => `
-        <tr>
-            <td data-label="Fecha">${formatDate(w.created_at)}</td>
-            <td data-label="Cliente">
-                <div style="font-weight:600">${w.client_name || 'N/A'}</div>
-                <small style="color:var(--text-muted)">${w.client_phone || ''}</small>
-            </td>
-            <td data-label="Equipo">
-                <div style="font-weight:600">${w.brand_name} ${w.model_name}</div>
-                <small style="font-family:monospace">${w.imei}</small>
-            </td>
-            <td data-label="Tienda"><span class="badge badge-primary">${w.store_name}</span></td>
-            <td data-label="Documentos">
-                ${w.receipt_thumb ? `<img src="${w.receipt_thumb}" class="doc-thumb" onclick="viewImage('${w.receipt_path}')" title="Comprobante" loading="lazy">` : '<span class="badge badge-warning">Sin Comp.</span>'}
-                ${w.warranty_thumb ? `<img src="${w.warranty_thumb}" class="doc-thumb" onclick="viewImage('${w.warranty_path}')" title="Garantía" loading="lazy">` : '<span class="badge badge-warning">Sin Gar.</span>'}
-            </td>
-            <td data-label="Acciones" class="text-right">
-                <button class="btn btn-secondary" onclick="openWarrantyModal(${w.sale_id})"><i class="fas fa-upload"></i> Subir / Editar</button>
-            </td>
-        </tr>
-    `).join('');
+
+    if (!filtered.length) {
+        return tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:var(--text-muted); padding:2rem;">No hay registros de garantía para este filtro</td></tr>';
+    }
+
+    tbody.innerHTML = filtered.map(w => {
+        const client = w.client_name || w.sale_client_name || 'Cliente Particular';
+        const phone = w.client_phone || w.sale_client_phone || '';
+        const status = getWarrantyStatus(w.sale_date);
+
+        const recImg = w.receipt_thumb || w.s_invoice_thumb;
+        const recPath = w.receipt_path || w.s_invoice_path;
+        const warImg = w.warranty_thumb;
+        const warPath = w.warranty_path;
+
+        return `
+            <tr>
+                <td data-label="Fecha Venta">${formatDate(w.sale_date)}</td>
+                <td data-label="Cliente">
+                    <div style="font-weight:600">${escapeHtml(client)}</div>
+                    <small style="color:var(--text-muted)">${escapeHtml(phone)}</small>
+                </td>
+                <td data-label="Equipo">
+                    <div style="font-weight:600">${escapeHtml(w.brand_name || '')} ${escapeHtml(w.model_name)}</div>
+                    <small style="font-family:monospace; color:var(--primary);">${escapeHtml(w.imei)}</small>
+                </td>
+                <td data-label="Tienda"><span class="badge badge-primary">${escapeHtml(w.store_name)}</span></td>
+                <td data-label="Plazo Garantía (30d)">
+                    <span class="badge" style="${status.style}; display:inline-flex; align-items:center; gap:0.35rem; font-weight:600;">
+                        <i class="fas ${status.isExpired ? 'fa-times-circle' : 'fa-shield-alt'}"></i> ${status.label}
+                    </span>
+                </td>
+                <td data-label="Comprobante & Garantía">
+                    <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap;">
+                        ${recImg ? `<img src="${recImg}" class="doc-thumb" onclick="viewImage('${recPath}')" title="Comprobante de Venta" loading="lazy" style="width:38px; height:38px; border-radius:6px; object-fit:cover; border:1px solid var(--border-color); cursor:pointer;">` : '<span class="badge badge-warning" style="font-size:0.75rem;">Sin Recibo</span>'}
+                        ${warImg ? `<img src="${warImg}" class="doc-thumb" onclick="viewImage('${warPath}')" title="Póliza de Garantía" loading="lazy" style="width:38px; height:38px; border-radius:6px; object-fit:cover; border:1px solid var(--border-color); cursor:pointer;">` : '<span class="badge badge-warning" style="font-size:0.75rem;">Sin Póliza</span>'}
+                    </div>
+                </td>
+                <td data-label="Acciones" class="text-right">
+                    <button class="btn btn-secondary" onclick="openWarrantyModal(${w.sale_id})" style="padding:0.4rem 0.8rem; font-size:0.85rem;"><i class="fas fa-upload"></i> Subir / Editar</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
 
 function openWarrantyModal(saleId) {
@@ -3048,24 +3279,43 @@ let html5QrCode = null;
 
 function openQrScanner() {
     openModal('qrScannerModal');
-    setTimeout(() => {
-        if (typeof Html5Qrcode !== 'undefined') {
-            html5QrCode = new Html5Qrcode("reader");
-            html5QrCode.start(
-                { facingMode: "environment" },
-                { fps: 10, qrbox: { width: 260, height: 160 } },
-                (decodedText) => {
-                    onImeiScanned(decodedText.trim());
-                },
-                (errorMessage) => { /* ignore frame errors */ }
-            ).catch(err => {
-                console.error("Camera scan error:", err);
-                showToast("No se pudo iniciar la cámara del dispositivo: " + err, true);
-            });
-        } else {
+    setTimeout(async () => {
+        if (typeof Html5Qrcode === 'undefined') {
             showToast("Librería de escáner no disponible.", true);
+            return;
         }
-    }, 300);
+        const readerId = "mainQrScannerReader";
+        if (html5QrCode) {
+            try { await html5QrCode.stop(); html5QrCode.clear(); } catch(e) {}
+            html5QrCode = null;
+        }
+        html5QrCode = new Html5Qrcode(readerId);
+        const config = { fps: 10, qrbox: { width: 270, height: 160 } };
+        try {
+            await html5QrCode.start(
+                { facingMode: "environment" },
+                config,
+                (decodedText) => { onImeiScanned(decodedText.trim()); },
+                (errorMessage) => { }
+            );
+        } catch (err) {
+            try {
+                const cameras = await Html5Qrcode.getCameras();
+                if (cameras && cameras.length > 0) {
+                    const backCam = cameras.find(c => c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('trasera')) || cameras[cameras.length - 1];
+                    await html5QrCode.start(
+                        backCam.id,
+                        config,
+                        (decodedText) => { onImeiScanned(decodedText.trim()); },
+                        (errorMessage) => { }
+                    );
+                } else { throw err; }
+            } catch(fallbackErr) {
+                console.error("Camera scan error:", fallbackErr);
+                showToast("Error de cámara en el teléfono: Permisos de navegador denegados o requiere HTTPS", true);
+            }
+        }
+    }, 250);
 }
 
 function closeQrScanner() {
