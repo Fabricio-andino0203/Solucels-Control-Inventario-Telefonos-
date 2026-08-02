@@ -22,11 +22,31 @@ const upload = multer({
     }
 });
 
-const UPLOADS_DIR = process.env.UPLOADS_PATH || path.join(__dirname, 'uploads');
+const JWT_SECRET = process.env.JWT_SECRET || 'slc_pro_secret_2026';
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'inventory.sqlite');
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+}
+console.log(`✅ Database target: ${dbPath}`);
+const db = new Database(dbPath);
+
+// ALMACENAMIENTO PERSISTENTE DE IMÁGENES (Detecta volumen persistente de Railway en /data/uploads)
+const UPLOADS_DIR = process.env.UPLOADS_PATH || (
+    fs.existsSync('/data') ? '/data/uploads' : path.join(dbDir, 'uploads')
+);
 ['comprobantes', 'garantias', 'thumbnails'].forEach(dir => {
     const fullPath = path.join(UPLOADS_DIR, dir);
     if (!fs.existsSync(fullPath)) fs.mkdirSync(fullPath, { recursive: true });
 });
+console.log(`📁 Uploads storage target: ${UPLOADS_DIR}`);
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(express.static('public'));
+app.use('/uploads', express.static(UPLOADS_DIR));
+app.get('/admin', (req, res) => res.redirect('/'));
 
 async function processImage(buffer, subdir, filename) {
     const fullDir = path.join(UPLOADS_DIR, subdir);
@@ -36,7 +56,7 @@ async function processImage(buffer, subdir, filename) {
     const thumbPath = path.join(thumbDir, filename);
 
     // COMPRESIÓN ULTRA OPTIMIZADA (Max 1000px, WebP 65%)
-    // Reduce fotos de cámara móvil (5-8 MB) a solo ~60-90 KB con excelente legibilidad de facturas y garantías
+    // Reduce fotos de cámara móvil (5-8 MB) a solo ~60-90 KB con excelente legibilidad
     await sharp(buffer)
         .resize(1000, 1000, { fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 65, effort: 4 })
@@ -53,23 +73,6 @@ async function processImage(buffer, subdir, filename) {
         thumb: `/uploads/thumbnails/${filename}`
     };
 }
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-app.use(express.static('public'));
-app.use('/uploads', express.static(UPLOADS_DIR));
-app.get('/admin', (req, res) => res.redirect('/'));
-
-const JWT_SECRET = process.env.JWT_SECRET || 'slc_pro_secret_2026';
-const dbPath = process.env.DB_PATH || path.join(__dirname, 'inventory.sqlite');
-// Asegurar que el directorio de la base de datos exista (necesario para Railway /data)
-const dbDir = path.dirname(dbPath);
-if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-}
-console.log(`✅ Database target: ${dbPath}`);
-const db = new Database(dbPath);
 
 // Optimizaciones SQLite
 db.exec('PRAGMA journal_mode=WAL;');
