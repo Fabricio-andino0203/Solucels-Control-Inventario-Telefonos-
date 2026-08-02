@@ -131,9 +131,6 @@
                     <li data-tab="config-tab" onclick="switchTab('config-tab')">
                         <i class="fas fa-sliders-h"></i> Ajustes del Sistema
                     </li>
-                    <li data-tab="users-tab" onclick="switchTab('users-tab')" id="nav-users">
-                        <i class="fas fa-users-cog"></i> Usuarios y Permisos
-                    </li>
                 </ul>
             </div>
 
@@ -884,10 +881,33 @@
                                     <th>Precios Oficiales (C/C)</th>
                                     <th class="text-right">Acciones</th>
                                 </tr>
-                            </thead>
                             <tbody></tbody>
                         </table>
                     </div>
+                </div>
+                <div class="config-panel full-width">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+                        <div>
+                            <h3><i class="fas fa-users-cog"></i> Gestión de Usuarios por Tienda</h3>
+                            <p style="color:var(--text-muted); font-size:0.85rem; margin-top:0.25rem;">Administración de cuentas, roles de acceso y asignación de sucursales.</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="openUserModal()"><i class="fas fa-plus"></i> + Nuevo Usuario</button>
+                    </div>
+                    <div class="table-container">
+                        <table id="usersConfigTable">
+                            <thead>
+                                <tr>
+                                    <th>Nombre Completo</th>
+                                    <th>Usuario</th>
+                                    <th>Rol</th>
+                                    <th>Sucursal</th>
+                                    <th class="text-right">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersConfigTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
                 <div class="config-panel full-width danger-zone-panel">
                     <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1rem;">
                         <i class="fas fa-exclamation-triangle" style="font-size:1.5rem; color:var(--danger);"></i>
@@ -975,14 +995,7 @@
             </div>
         </div>
 
-        <!-- USERS TAB (INYECCIÓN ESTRICTA) -->
-        <div id="users-tab" class="tab-content d-none" style="display: none;">
-            <div class="header-actions">
-                <h2>Gestión de Usuarios</h2>
-                <button id="btn-create-user" class="btn btn-primary" onclick="openUserModal()">+ Crear Usuario</button>
-            </div>
-            <div id="users-table-container"></div>
-        </div>
+
 
     </div>
 
@@ -1350,11 +1363,13 @@
                 </div>
             </div>
         </div>
-    <!-- USER MODAL (CREAR / EDITAR USUARIO DESDE CERO) -->
+    </div>
+
+    <!-- USER MODAL (CREAR / EDITAR USUARIOS EN CONFIGURACIÓN) -->
     <div id="userModal" class="modal-overlay">
         <div class="modal" style="max-width: 520px;">
             <div class="modal-header">
-                <h2 id="userModalTitle"><i class="fas fa-user-shield"></i> Registrar Usuario</h2>
+                <h2 id="userModalTitle"><i class="fas fa-user-shield"></i> Registrar Nuevo Usuario</h2>
                 <button class="close-btn" onclick="closeModal('userModal')"><i class="fas fa-times"></i></button>
             </div>
             <form onsubmit="return saveUserForm(event)">
@@ -1366,8 +1381,8 @@
                 </div>
 
                 <div class="form-group mb-3">
-                    <label style="font-weight:600; font-size:0.88rem; margin-bottom:0.4rem; display:block;"><i class="fas fa-user"></i> Usuario / Email (para Login) *</label>
-                    <input type="text" id="modalUserUsername" placeholder="Ej. jperez / carlos@solucels.com" required autocomplete="off">
+                    <label style="font-weight:600; font-size:0.88rem; margin-bottom:0.4rem; display:block;"><i class="fas fa-user"></i> Usuario (para Login) *</label>
+                    <input type="text" id="modalUserUsername" placeholder="Ej. jperez / carlos" required autocomplete="off">
                 </div>
 
                 <div class="form-group mb-3">
@@ -1380,20 +1395,20 @@
 
                 <div class="form-group mb-3">
                     <label style="font-weight:600; font-size:0.88rem; margin-bottom:0.4rem; display:block;"><i class="fas fa-user-shield"></i> Rol de Acceso *</label>
-                    <select id="modalUserRole" onchange="onModalUserRoleChange()" required class="input-select-premium" style="width:100%; padding:0.75rem; border-radius:var(--radius-sm); background:var(--bg-color); color:var(--text-main); border:1px solid var(--border-color);">
-                        <option value="admin">Administrador (Acceso total al sistema)</option>
-                        <option value="vendedor">Vendedor (Acceso restringido a su tienda)</option>
+                    <select id="modalUserRole" onchange="onModalUserRoleChange()" required>
+                        <option value="admin">Administrador</option>
+                        <option value="vendedor">Vendedor</option>
                     </select>
                 </div>
 
                 <div class="form-group mb-4" id="modalUserStoreGroup" style="display:none;">
                     <label style="font-weight:600; font-size:0.88rem; margin-bottom:0.4rem; display:block;"><i class="fas fa-store"></i> Sucursal Asignada *</label>
-                    <select id="modalUserStore" class="input-select-premium" style="width:100%; padding:0.75rem; border-radius:var(--radius-sm); background:var(--bg-color); color:var(--text-main); border:1px solid var(--border-color);">
+                    <select id="modalUserStore">
                         <option value="">-- Seleccionar Sucursal --</option>
+                        <option value="INVERSIONES SOLUCELS #2">INVERSIONES SOLUCELS #2</option>
+                        <option value="INVERSIONES SOLUCELS #6">INVERSIONES SOLUCELS #6</option>
+                        <option value="INVERSIONES SOLUCELS #7">INVERSIONES SOLUCELS #7</option>
                     </select>
-                    <small style="color:var(--text-muted); font-size:0.78rem; display:block; margin-top:0.35rem;">
-                        <i class="fas fa-info-circle"></i> Los vendedores solo podrán visualizar y vender el inventario de esta tienda.
-                    </small>
                 </div>
 
                 <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:1.5rem;">
@@ -1403,6 +1418,7 @@
             </form>
         </div>
     </div>
+
 </body>
 
 </html>

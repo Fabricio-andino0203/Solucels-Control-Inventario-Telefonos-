@@ -3,12 +3,22 @@ let currentUser = localStorage.getItem('slc_user') || '';
 let currentRole = localStorage.getItem('slc_role') || 'admin';
 let currentStoreId = localStorage.getItem('slc_store_id') || null;
 let state = {
-    stores: [], brands: [], models: [], phones: [], transfers: [], sales: [], liquidations: [], liquidationsHistory: [], users: [],
+    stores: [], brands: [], models: [], phones: [], transfers: [], sales: [], liquidations: [], liquidationsHistory: [],
     auditPhones: [], auditResults: {}, revisionPhones: [], auditHistory: [],
     currentSalePhone: null
 };
 let html5QrcodeScanner = null;
 let currentScannerTargetId = null;
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
 
 function formatDate(dateStr) {
     if (!dateStr) return '-';
@@ -94,8 +104,16 @@ function applyRolePermissions() {
     }
 }
 async function checkAuthAndInit() {
-    if (getAuthToken()) { document.getElementById('loginOverlay').classList.add('hidden'); toggleAdminFeatures(); await fetchAllData(); }
-    else { document.getElementById('loginOverlay').classList.remove('hidden'); }
+    if (getAuthToken()) {
+        currentUser = localStorage.getItem('slc_user') || '';
+        currentRole = localStorage.getItem('slc_role') || 'admin';
+        currentStoreId = localStorage.getItem('slc_store_id') || null;
+        document.getElementById('loginOverlay').classList.add('hidden');
+        toggleAdminFeatures();
+        await fetchAllData();
+    } else {
+        document.getElementById('loginOverlay').classList.remove('hidden');
+    }
 }
 async function handleLogin(e) {
     e.preventDefault();
@@ -135,7 +153,7 @@ async function fetchAuth(url, options = {}) {
 }
 
 // FETCH DATA
-async function fetchAllData() { await Promise.all([fetchConfig(), fetchInventory()]); fetchTransfers(); fetchSales(); fetchLiquidations(); if (currentRole === 'admin') fetchUsers(); }
+async function fetchAllData() { await Promise.all([fetchConfig(), fetchInventory()]); fetchTransfers(); fetchSales(); fetchLiquidations(); }
 function switchTab(tabId) {
     console.log('🚀 [FRONTEND ROUTER] Ejecutando switchTab para pestaña:', tabId);
     
@@ -146,7 +164,7 @@ function switchTab(tabId) {
     else if (storedUser === 'admin') currentRole = 'admin';
 
     const isAdmin = currentRole === 'admin';
-    const adminTabs = ['dashboard-tab', 'bulk-tab', 'config-tab', 'liquidations-tab', 'liquidations-history-tab', 'promotions-tab', 'audit-tab', 'audit-history-tab', 'revision-tab', 'users-tab'];
+    const adminTabs = ['dashboard-tab', 'bulk-tab', 'config-tab', 'liquidations-tab', 'liquidations-history-tab', 'promotions-tab', 'audit-tab', 'audit-history-tab', 'revision-tab'];
 
     // Block Vendedor from accessing admin tabs
     if (!isAdmin && adminTabs.includes(tabId)) {
@@ -204,10 +222,6 @@ function switchTab(tabId) {
     else if (tabId === 'audit-tab') { document.getElementById('auditImeiSearch')?.focus(); }
     else if (tabId === 'audit-history-tab') { fetchAuditHistory(); }
     else if (tabId === 'revision-tab') { fetchRevisionPhones(); }
-    else if (tabId === 'users-tab') {
-        console.log('👉 [FRONTEND ROUTER] Entrando a users-tab (HOLA MUNDO TEST)...');
-        fetchUsers();
-    }
     else if (tabId === 'inventory-tab') { fetchAllData(); }
 }
 
@@ -242,7 +256,7 @@ async function fetchConfig() {
     try {
         const [resS, resB, resM] = await Promise.all([fetchAuth(`${API_URL}/stores`), fetchAuth(`${API_URL}/brands`), fetchAuth(`${API_URL}/models`)]);
         state.stores = await resS.json(); state.brands = await resB.json(); state.models = await resM.json();
-        renderConfigStores(); renderConfigBrands(); renderConfigModels(); populateSelects();
+        renderConfigStores(); renderConfigBrands(); renderConfigModels(); populateSelects(); loadUsersConfig();
     } catch (e) { console.error(e); }
 }
 async function fetchInventory() {
@@ -285,25 +299,6 @@ async function fetchSales() {
     } catch (e) { console.error(e); } 
 }
 async function fetchLiquidations() { try { const res = await fetchAuth(`${API_URL}/liquidations`); state.liquidations = await res.json(); renderLiquidationsTable(); } catch (e) { console.error(e); } }
-async function fetchUsers() { 
-    console.log('👉 [FRONTEND LOG] Invocando fetchUsers()...');
-    try { 
-        if (!state.stores || state.stores.length === 0) {
-            await fetchConfig();
-        }
-        console.log('👉 [FRONTEND LOG] Realizando fetchAuth a /api/users...');
-        const res = await fetchAuth(`${API_URL}/users`); 
-        console.log('👉 [FRONTEND LOG] Respuesta recibida de /api/users, Status HTTP:', res.status);
-        const data = await res.json();
-        console.log('👉 [FRONTEND LOG] Datos de usuarios decodificados:', data);
-        state.users = Array.isArray(data) ? data : []; 
-        renderUsersTable(); 
-    } catch (e) { 
-        console.error('❌ [FRONTEND LOG ERROR] Error en fetchUsers:', e); 
-        state.users = [];
-        renderUsersErrorState(e.message);
-    } 
-}
 
 // RENDER UI
 function renderConfigStores() { document.getElementById('storesList').innerHTML = state.stores.map(s => `<li>${s.name} <button class="btn-icon text-danger" onclick="deleteConfig('stores', ${s.id})"><i class="fas fa-trash"></i></button></li>`).join(''); }
@@ -1392,113 +1387,68 @@ async function genericPost(type, payload) {
     } catch (err) { showToast(err.message, true); }
 }
 
-// USER MANAGEMENT
-function toggleUserStoreField() {
-    const roleSelect = document.getElementById('newUserRole');
-    const storeGroup = document.getElementById('newUserStoreGroup');
-    const storeSelect = document.getElementById('newUserStore');
-    if (!roleSelect || !storeGroup) return;
 
-    if (roleSelect.value === 'vendedor') {
-        storeGroup.style.display = 'block';
-        if (storeSelect) storeSelect.required = true;
-        if (storeSelect && (storeSelect.options.length <= 1 || storeSelect.options[1].text === '')) {
-            storeSelect.innerHTML = '<option value="">-- Seleccionar Sucursal --</option>' +
-                state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+
+async function changeMyPassword(e) {
+    e.preventDefault();
+    try {
+        const payload = { currentPassword: document.getElementById('currentPassword').value, newPassword: document.getElementById('newPassword').value };
+        const res = await fetchAuth(`${API_URL}/users/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!res.ok) throw new Error((await res.json()).error);
+        showToast('Su contraseña ha sido actualizada exitosamente'); e.target.reset();
+    } catch (err) { showToast(err.message, true); }
+    return false;
+}
+
+// ==========================================
+// GESTIÓN DE USUARIOS POR TIENDA (CONFIGURACIÓN)
+// ==========================================
+
+async function loadUsersConfig() {
+    const tbody = document.getElementById('usersConfigTableBody');
+    if (!tbody) return;
+    try {
+        const res = await fetchAuth(`${API_URL}/users`);
+        if (!res.ok) throw new Error('Error al cargar usuarios');
+        const users = await res.json();
+        state.users = Array.isArray(users) ? users : [];
+
+        if (state.users.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center" style="color:var(--text-muted); padding:2rem;">No hay usuarios registrados</td></tr>`;
+            return;
         }
-    } else {
-        storeGroup.style.display = 'none';
-        if (storeSelect) { storeSelect.required = false; storeSelect.value = ''; }
+
+        tbody.innerHTML = state.users.map(u => `
+            <tr style="border-bottom:1px solid var(--border-color);">
+                <td style="padding:0.85rem 1rem; color:var(--text-main);">
+                    <strong><i class="fas fa-user-circle" style="color:var(--primary); margin-right:0.4rem;"></i>${escapeHtml(u.full_name || u.username)}</strong>
+                </td>
+                <td style="padding:0.85rem 1rem;">
+                    <span style="font-family:monospace; color:var(--primary); background:rgba(37,99,235,0.1); padding:0.2rem 0.5rem; border-radius:4px;">${escapeHtml(u.username)}</span>
+                </td>
+                <td style="padding:0.85rem 1rem;">
+                    <span class="badge ${u.role === 'admin' ? 'badge-primary' : 'badge-secondary'}" style="display:inline-flex; align-items:center; gap:0.35rem;">
+                        <i class="fas ${u.role === 'admin' ? 'fa-user-shield' : 'fa-user'}"></i> ${u.role === 'admin' ? 'Administrador' : 'Vendedor'}
+                    </span>
+                </td>
+                <td style="padding:0.85rem 1rem;">
+                    ${u.role === 'vendedor' && u.store_name ? `<span class="badge badge-success" style="display:inline-flex; align-items:center; gap:0.35rem;"><i class="fas fa-store"></i> ${escapeHtml(u.store_name)}</span>` : '<span style="color:var(--text-muted); font-size:0.85rem;"><i class="fas fa-globe"></i> Acceso Global</span>'}
+                </td>
+                <td style="padding:0.85rem 1rem;" class="text-right">
+                    <div style="display:flex; justify-content:flex-end; gap:0.4rem; align-items:center;">
+                        <button type="button" class="btn-icon text-primary" onclick="openUserModal(${u.id})" title="Editar Usuario" style="padding:0.4rem; cursor:pointer;"><i class="fas fa-edit"></i></button>
+                        ${u.username !== 'admin' ? `<button type="button" class="btn-icon text-danger" onclick="deleteUserConfig(${u.id})" title="Eliminar Usuario" style="padding:0.4rem; cursor:pointer;"><i class="fas fa-trash"></i></button>` : '<span class="badge badge-success" style="font-size:0.75rem; padding:0.2rem 0.5rem;">Admin Maestro</span>'}
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center" style="color:var(--danger); padding:1.5rem;">Error al cargar usuarios: ${escapeHtml(err.message)}</td></tr>`;
     }
-}
-
-// ==========================================
-// MÓDULO DE USUARIOS Y PERMISOS (RECONSTRUIDO DESDE CERO)
-// ==========================================
-
-function renderUsersTable() {
-    const tableContainer = document.getElementById('users-table-container');
-    if (!tableContainer) {
-        console.error('❌ [FRONTEND ERROR] No se encontró el elemento #users-table-container en el DOM');
-        return;
-    }
-
-    if (!Array.isArray(state.users)) state.users = [];
-
-    if (state.users.length === 0) {
-        tableContainer.innerHTML = `
-            <div style="background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border-color); padding:3.5rem 1.5rem; text-align:center;">
-                <i class="fas fa-users-slash" style="font-size:3rem; color:var(--text-muted); display:block; margin-bottom:1rem;"></i>
-                <h3 style="margin:0 0 0.5rem 0; color:var(--text-main); font-weight:700;">No hay usuarios registrados</h3>
-                <p style="margin:0 0 1.5rem 0; color:var(--text-muted); font-size:0.9rem;">No se encontraron accesos configurados en el sistema actualmente.</p>
-                <button type="button" class="btn btn-primary" onclick="openUserModal()" style="padding:0.65rem 1.4rem; font-size:0.9rem; border-radius:8px;">
-                    <i class="fas fa-user-plus"></i> Crear Nuevo Usuario
-                </button>
-            </div>
-        `;
-        return;
-    }
-
-    tableContainer.innerHTML = `
-        <div class="table-container" style="background:var(--card-bg); border-radius:var(--radius-md); border:1px solid var(--border-color); padding:1.5rem;">
-            <table id="usersTable" class="w-100">
-                <thead>
-                    <tr>
-                        <th>Nombre Completo</th>
-                        <th>Usuario / Email</th>
-                        <th>Rol de Acceso</th>
-                        <th>Sucursal Asignada</th>
-                        <th class="text-right">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${state.users.map(u => `
-                        <tr>
-                            <td data-label="Nombre Completo">
-                                <strong>${u.full_name || u.username}</strong>
-                            </td>
-                            <td data-label="Usuario / Email">
-                                <span style="font-family:monospace; font-size:0.9rem; color:var(--primary);">${u.username}</span>
-                            </td>
-                            <td data-label="Rol">
-                                <span class="badge ${u.role === 'admin' ? 'badge-primary' : 'badge-secondary'}">
-                                    <i class="fas ${u.role === 'admin' ? 'fa-user-shield' : 'fa-user'}"></i> ${u.role === 'admin' ? 'Administrador' : 'Vendedor'}
-                                </span>
-                            </td>
-                            <td data-label="Sucursal">
-                                ${u.role === 'vendedor' && u.store_name ? `<span class="badge badge-success"><i class="fas fa-store"></i> ${u.store_name}</span>` : '<span style="color:var(--text-muted); font-size:0.85rem;">Todas (Acceso Global)</span>'}
-                            </td>
-                            <td class="text-right" data-label="Acciones">
-                                <div style="display:flex; justify-content:flex-end; gap:0.4rem;">
-                                    <button type="button" class="btn-icon text-primary" onclick="openUserModal(${u.id})" title="Editar"><i class="fas fa-edit"></i></button>
-                                    ${u.username !== 'admin' ? `<button type="button" class="btn-icon text-danger" onclick="deleteUser(${u.id})" title="Eliminar"><i class="fas fa-trash"></i></button>` : '<span class="badge badge-success" style="font-size:0.7rem;">Admin Maestro</span>'}
-                                </div>
-                            </td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        </div>
-    `;
-}
-
-function renderUsersErrorState(errMsg) {
-    const wrapper = document.getElementById('usersTableWrapper');
-    if (!wrapper) return;
-    wrapper.innerHTML = `
-        <div style="text-align:center; padding:3rem 1.5rem; background:rgba(239,68,68,0.05); border:1px dashed var(--danger); border-radius:var(--radius-md);">
-            <i class="fas fa-exclamation-triangle" style="font-size:2.8rem; color:var(--danger); display:block; margin-bottom:1rem;"></i>
-            <h3 style="margin:0 0 0.5rem 0; color:var(--text-main); font-weight:700;">Error al cargar datos de usuarios</h3>
-            <p style="margin:0 0 1.5rem 0; color:var(--danger); font-size:0.9rem;">${errMsg || 'No se pudo obtener la respuesta del servidor.'}</p>
-            <button type="button" class="btn btn-secondary" onclick="fetchUsers()" style="padding:0.6rem 1.2rem; font-size:0.9rem; border-radius:8px;">
-                <i class="fas fa-sync-alt"></i> Reintentar Carga
-            </button>
-        </div>
-    `;
 }
 
 function openUserModal(userId = null) {
-    const modalTitle = document.getElementById('userModalTitle');
+    const title = document.getElementById('userModalTitle');
     const idInput = document.getElementById('modalUserId');
     const nameInput = document.getElementById('modalUserFullName');
     const userInput = document.getElementById('modalUserUsername');
@@ -1507,33 +1457,31 @@ function openUserModal(userId = null) {
     const roleSelect = document.getElementById('modalUserRole');
     const storeSelect = document.getElementById('modalUserStore');
 
-    // Populate stores dropdown
-    if (storeSelect && state.stores) {
+    // Populate stores dropdown dynamically from state.stores if available
+    if (storeSelect && Array.isArray(state.stores) && state.stores.length > 0) {
         storeSelect.innerHTML = '<option value="">-- Seleccionar Sucursal --</option>' +
-            state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+            state.stores.map(s => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
     }
 
     if (userId) {
         const u = state.users.find(x => x.id === userId);
         if (!u) return;
-        modalTitle.innerHTML = '<i class="fas fa-user-edit"></i> Editar Usuario';
-        idInput.value = u.id;
-        nameInput.value = u.full_name || '';
-        userInput.value = u.username || '';
-        passInput.value = '';
-        passInput.required = false;
+        if (title) title.innerHTML = '<i class="fas fa-user-edit"></i> Editar Usuario';
+        if (idInput) idInput.value = u.id;
+        if (nameInput) nameInput.value = u.full_name || '';
+        if (userInput) userInput.value = u.username || '';
+        if (passInput) { passInput.value = ''; passInput.required = false; }
         if (passHelp) passHelp.style.display = 'inline';
-        roleSelect.value = u.role || 'admin';
-        if (storeSelect) storeSelect.value = u.store_id || '';
+        if (roleSelect) roleSelect.value = u.role || 'admin';
+        if (storeSelect) storeSelect.value = u.store_name || u.store_id || '';
     } else {
-        modalTitle.innerHTML = '<i class="fas fa-user-plus"></i> Registrar Nuevo Usuario';
-        idInput.value = '';
-        nameInput.value = '';
-        userInput.value = '';
-        passInput.value = '';
-        passInput.required = true;
+        if (title) title.innerHTML = '<i class="fas fa-user-plus"></i> Registrar Nuevo Usuario';
+        if (idInput) idInput.value = '';
+        if (nameInput) nameInput.value = '';
+        if (userInput) userInput.value = '';
+        if (passInput) { passInput.value = ''; passInput.required = true; }
         if (passHelp) passHelp.style.display = 'none';
-        roleSelect.value = 'admin';
+        if (roleSelect) roleSelect.value = 'admin';
         if (storeSelect) storeSelect.value = '';
     }
 
@@ -1558,16 +1506,27 @@ function onModalUserRoleChange() {
 
 async function saveUserForm(e) {
     e.preventDefault();
-    const userId = document.getElementById('modalUserId').value;
-    const fullName = document.getElementById('modalUserFullName').value.trim();
-    const username = document.getElementById('modalUserUsername').value.trim();
-    const password = document.getElementById('modalUserPassword').value;
-    const role = document.getElementById('modalUserRole').value;
-    const storeId = document.getElementById('modalUserStore').value;
+    const userId = document.getElementById('modalUserId')?.value;
+    const fullName = document.getElementById('modalUserFullName')?.value.trim();
+    const username = document.getElementById('modalUserUsername')?.value.trim();
+    const password = document.getElementById('modalUserPassword')?.value;
+    const role = document.getElementById('modalUserRole')?.value;
+    const storeVal = document.getElementById('modalUserStore')?.value;
 
-    if (role === 'vendedor' && !storeId) {
+    if (!username) {
+        showToast('El nombre de usuario es requerido.', true);
+        return false;
+    }
+
+    if (role === 'vendedor' && !storeVal) {
         showToast('Requisito Obligatorio: Seleccione una sucursal para el Vendedor.', true);
         return false;
+    }
+
+    let storeId = null;
+    if (role === 'vendedor' && storeVal) {
+        const matchingStore = Array.isArray(state.stores) ? state.stores.find(s => s.name === storeVal || s.id == storeVal) : null;
+        storeId = matchingStore ? matchingStore.id : storeVal;
     }
 
     const payload = {
@@ -1575,7 +1534,8 @@ async function saveUserForm(e) {
         username: username,
         password: password,
         role: role,
-        store_id: role === 'vendedor' ? parseInt(storeId) : null
+        store_id: storeId,
+        store_name: storeVal
     };
 
     try {
@@ -1605,29 +1565,19 @@ async function saveUserForm(e) {
 
         showToast(userId ? 'Usuario Actualizado Exitosamente' : 'Nuevo Usuario Registrado');
         closeModal('userModal');
-        await fetchUsers();
+        await loadUsersConfig();
     } catch (err) { showToast(err.message, true); }
     return false;
 }
 
-async function deleteUser(id) {
+async function deleteUserConfig(id) {
     if (!confirm('¿Eliminar acceso del usuario seleccionado?')) return;
-    try { 
-        const res = await fetchAuth(`${API_URL}/users/${id}`, { method: 'DELETE' }); 
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error eliminando usuario'); 
-        fetchUsers(); 
+    try {
+        const res = await fetchAuth(`${API_URL}/users/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error eliminando usuario');
+        loadUsersConfig();
         showToast('Usuario eliminado del sistema');
     } catch (err) { showToast(err.message, true); }
-}
-async function changeMyPassword(e) {
-    e.preventDefault();
-    try {
-        const payload = { currentPassword: document.getElementById('currentPassword').value, newPassword: document.getElementById('newPassword').value };
-        const res = await fetchAuth(`${API_URL}/users/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (!res.ok) throw new Error((await res.json()).error);
-        showToast('Su contraseña ha sido actualizada exitosamente'); e.target.reset();
-    } catch (err) { showToast(err.message, true); }
-    return false;
 }
 
 // ADD PHONE (QUICK FORM)
