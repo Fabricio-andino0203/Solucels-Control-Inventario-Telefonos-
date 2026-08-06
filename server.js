@@ -906,9 +906,19 @@ app.post('/api/sales', upload.single('invoice'), async (req, res) => {
         const actDiscount = parseFloat(discount) || 0;
         const actPriceType = price_type || 'Contado';
         
-        const user = db.prepare('SELECT username FROM users WHERE id=?').get(req.user.id);
-        if (actDiscount > 0 && user.username !== 'admin') {
-            return res.status(403).json({error: "Solo administradores pueden aplicar descuentos manuales."});
+        const user = db.prepare('SELECT username, role FROM users WHERE id=?').get(req.user.id);
+        const isUserAdmin = (user && (user.username === 'admin' || user.role === 'admin'));
+        const maxAllowedDisc = phone.max_discount || 0;
+
+        if (actDiscount > 0) {
+            if (!isUserAdmin) {
+                if (maxAllowedDisc <= 0) {
+                    return res.status(403).json({ error: "Este equipo no aplica para descuento." });
+                }
+                if (actDiscount > maxAllowedDisc) {
+                    return res.status(400).json({ error: `El descuento excede el máximo permitido (L. ${maxAllowedDisc.toFixed(2)}) para este equipo.` });
+                }
+            }
         }
 
         let base_price = 0;

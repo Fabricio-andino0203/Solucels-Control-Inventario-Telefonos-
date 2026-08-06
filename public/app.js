@@ -2074,16 +2074,42 @@ function openSaleModal(id) {
     document.getElementById('salePrima').value = '0.00';
     document.getElementById('saleDiscount').value = '0.00';
 
+    // Reset file preview
+    const fileInput = document.getElementById('saleInvoiceFile');
+    if (fileInput) fileInput.value = '';
+    const filePrev = document.getElementById('invoiceFilePreview');
+    if (filePrev) filePrev.style.display = 'none';
+
     // Set default date to today
     const now = new Date();
     const today = now.toISOString().split('T')[0];
     document.getElementById('saleDate').value = today;
 
-    // Admin features
+    // Admin & Vendor features
     const isAdmin = currentUser === 'admin';
-    document.getElementById('adminDiscountRow').style.display = isAdmin ? 'block' : 'none';
+    const maxDisc = parseFloat(p.max_discount) || 0;
+    const discountRow = document.getElementById('adminDiscountRow');
+    const discountLabel = document.getElementById('saleDiscountLabel');
     const hintEl = document.getElementById('maxDiscountHint');
-    if (hintEl) hintEl.innerText = `Máx. permitido: L. ${(p.max_discount || 0).toLocaleString('en-US')}`;
+    const discountInput = document.getElementById('saleDiscount');
+
+    if (discountRow) {
+        if (isAdmin) {
+            discountRow.style.display = 'block';
+            if (discountLabel) discountLabel.innerText = 'Descuento Especial (Admin)';
+            if (hintEl) hintEl.innerText = maxDisc > 0 ? `Máx. sugerido catálogo: L. ${maxDisc.toLocaleString('en-US')}` : 'Sin límite (Modo Admin)';
+            if (discountInput) discountInput.removeAttribute('max');
+        } else if (maxDisc > 0) {
+            discountRow.style.display = 'block';
+            if (discountLabel) discountLabel.innerText = 'Descuento Aplicable (L.)';
+            if (hintEl) hintEl.innerText = `Máx. permitido vendedor: L. ${maxDisc.toLocaleString('en-US')}`;
+            if (discountInput) discountInput.setAttribute('max', maxDisc);
+        } else {
+            discountRow.style.display = 'none';
+            if (discountInput) discountInput.value = '0.00';
+            if (hintEl) hintEl.innerText = '';
+        }
+    }
 
     document.getElementById('saleOptCredit').disabled = !p.credit_enabled;
 
@@ -2094,13 +2120,41 @@ function openSaleModal(id) {
     calculateSale();
     openModal('saleModal');
 }
+function previewInvoiceFile(input) {
+    const previewContainer = document.getElementById('invoiceFilePreview');
+    const previewImg = document.getElementById('invoicePreviewImg');
+    const fileNameEl = document.getElementById('invoiceFileName');
+    
+    if (input && input.files && input.files[0]) {
+        const file = input.files[0];
+        if (fileNameEl) fileNameEl.innerText = file.name;
+        if (previewImg) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                previewImg.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+        if (previewContainer) previewContainer.style.display = 'flex';
+    } else {
+        if (previewContainer) previewContainer.style.display = 'none';
+    }
+}
 function calculateSale() {
     const p = state.currentSalePhone; if (!p) return;
     const finalPriceInput = document.getElementById('saleFinalPrice');
     const creditDetails = document.getElementById('saleCreditDetails');
     const saldoInput = document.getElementById('saleSaldo');
     const priceType = document.getElementById('salePriceType').value;
-    const discount = parseFloat(document.getElementById('saleDiscount').value) || 0;
+    const isAdmin = currentUser === 'admin';
+    const maxDisc = parseFloat(p.max_discount) || 0;
+    let discount = parseFloat(document.getElementById('saleDiscount').value) || 0;
+
+    if (!isAdmin && maxDisc > 0 && discount > maxDisc) {
+        discount = maxDisc;
+        document.getElementById('saleDiscount').value = maxDisc.toFixed(2);
+        showToast(`El descuento máximo permitido para este equipo es L. ${maxDisc.toLocaleString('en-US')}`, true);
+    }
 
     let base_price = 0;
 
@@ -2138,11 +2192,27 @@ async function saveSale(e) {
 
     const priceType = document.getElementById('salePriceType').value;
     const primaVal = parseFloat(document.getElementById('salePrima').value) || 0;
+    const discountVal = parseFloat(document.getElementById('saleDiscount').value) || 0;
+    const p = state.currentSalePhone;
+    const isAdmin = currentUser === 'admin';
+    const maxDisc = p ? (parseFloat(p.max_discount) || 0) : 0;
+
+    if (!isAdmin && discountVal > 0) {
+        if (maxDisc <= 0) {
+            showToast('Este equipo no aplica para descuento.', true);
+            return false;
+        }
+        if (discountVal > maxDisc) {
+            showToast(`El descuento excede el máximo permitido (L. ${maxDisc.toLocaleString('en-US')})`, true);
+            return false;
+        }
+    }
 
     if (priceType === 'Crédito' && primaVal <= 0) {
         showToast('Requisito Obligatorio: En ventas a Crédito debe registrar la Prima inicial recibida.', true);
         return false;
     }
+
 
     try {
         const formData = new FormData();
