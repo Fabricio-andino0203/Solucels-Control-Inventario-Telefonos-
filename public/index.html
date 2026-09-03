@@ -63,9 +63,13 @@
                     <li data-tab="inventory-tab" onclick="switchTab('inventory-tab')">
                         <i class="fas fa-mobile-alt"></i> Equipos Disponibles
                     </li>
+                    <li data-tab="claro-consignments-tab" onclick="switchTab('claro-consignments-tab')" style="color:#f43f5e; font-weight:600;">
+                        <i class="fas fa-file-contract" style="color:#f43f5e;"></i> Consignaciones CLARO
+                    </li>
                     <li data-tab="bulk-tab" onclick="switchTab('bulk-tab')" data-admin="true">
                         <i class="fas fa-layer-group"></i> Ingreso Masivo
                     </li>
+
                     <li data-tab="transfers-tab" onclick="switchTab('transfers-tab')">
                         <i class="fas fa-exchange-alt"></i> Traslados
                     </li>
@@ -291,8 +295,116 @@
             </div>
         </div>
 
+        <!-- CLARO CONSIGNMENTS TAB -->
+        <div id="claro-consignments-tab" class="tab-content" style="display:none;">
+            <header style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem;">
+                <div>
+                    <h1 style="color:#f43f5e; display:flex; align-items:center; gap:0.6rem;">
+                        <i class="fas fa-file-contract"></i> Control de Consignaciones — CLARO
+                    </h1>
+                    <p class="subtitle">Gestión de inventario entregado en consignación y registro de pagos al proveedor</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-primary" onclick="exportClaroReport()" style="background:#e11d48; border:none;">
+                        <i class="fas fa-file-excel"></i> Exportar Excel CLARO
+                    </button>
+                </div>
+            </header>
+
+            <!-- KPI SUMMARY CARDS -->
+            <div class="stats-container" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1.5rem;">
+                <div class="stat-card" style="border-left: 4px solid #f43f5e;">
+                    <div class="stat-icon" style="background: rgba(244, 63, 94, 0.15); color: #f43f5e;"><i class="fas fa-boxes"></i></div>
+                    <div class="stat-info">
+                        <h3>Total Recibidos</h3>
+                        <p id="claro-kpi-total">0</p>
+                        <small style="color:var(--text-muted);">Equipos consignados</small>
+                    </div>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid #3b82f6;">
+                    <div class="stat-icon" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6;"><i class="fas fa-mobile-alt"></i></div>
+                    <div class="stat-info">
+                        <h3>Disponibles</h3>
+                        <p id="claro-kpi-available">0</p>
+                        <small style="color:var(--text-muted);">Stock en tiendas</small>
+                    </div>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid #f59e0b;">
+                    <div class="stat-icon" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;"><i class="fas fa-clock"></i></div>
+                    <div class="stat-info">
+                        <h3>Vendidos sin Pagar</h3>
+                        <p id="claro-kpi-pending-count">0</p>
+                        <small style="color:var(--text-muted);">Pendientes de pago</small>
+                    </div>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid #fbbf24; background: rgba(251, 191, 36, 0.08);">
+                    <div class="stat-icon" style="background: rgba(251, 191, 36, 0.2); color: #fbbf24;"><i class="fas fa-hand-holding-usd"></i></div>
+                    <div class="stat-info">
+                        <h3 style="color:#fbbf24;">Por Pagar a CLARO (L.)</h3>
+                        <p id="claro-kpi-pending-amount" style="color:#fbbf24; font-weight:800;">L. 0.00</p>
+                        <small style="color:var(--text-muted);">Costo correspondiente acumulado</small>
+                    </div>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid #10b981;">
+                    <div class="stat-icon" style="background: rgba(16, 185, 129, 0.15); color: #10b981;"><i class="fas fa-check-circle"></i></div>
+                    <div class="stat-info">
+                        <h3>Pagados a CLARO</h3>
+                        <p id="claro-kpi-paid-count">0</p>
+                        <small style="color:var(--text-muted);" id="claro-kpi-paid-amount">L. 0.00 pagados</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FILTERS & ACTIONS BAR -->
+            <div class="card" style="padding:1.25rem; margin-bottom:1.5rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                    <div style="display:flex; gap:0.75rem; flex-wrap:wrap; flex:1;">
+                        <input type="text" id="claroSearchInput" placeholder="Buscar por IMEI o Modelo..." oninput="loadClaroConsignments()" style="min-width:220px; flex:1;">
+                        <select id="claroStatusFilter" onchange="loadClaroConsignments()" style="min-width:180px;">
+                            <option value="ALL">Todos los Estados</option>
+                            <option value="Disponible">Disponibles en Tienda</option>
+                            <option value="Pendiente" selected>Vendidos - Pendientes de Pago CLARO</option>
+                            <option value="Pagado">Vendidos - Pagados a CLARO</option>
+                        </select>
+                        <select id="claroStoreFilter" onchange="loadClaroConsignments()" style="min-width:160px;">
+                            <option value="ALL">Todas las Tiendas</option>
+                        </select>
+                    </div>
+                    <div id="claroBulkActionsContainer">
+                        <button class="btn btn-primary" onclick="paySelectedClaro()" style="background:#10b981; border:none; display:none;" id="btnPaySelectedClaro">
+                            <i class="fas fa-check-double"></i> Marcar Seleccionados como Pagados
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CONSIGNMENTS TABLE -->
+            <div class="table-responsive">
+                <table class="table" id="claroConsignmentsTable">
+                    <thead>
+                        <tr>
+                            <th style="width:40px; text-align:center;"><input type="checkbox" id="claroSelectAll" onchange="toggleSelectAllClaro(this)"></th>
+                            <th>IMEI / S/N</th>
+                            <th>Marca y Modelo</th>
+                            <th>Tienda</th>
+                            <th>Estado Inventario</th>
+                            <th>Fecha Venta</th>
+                            <th>Tipo Venta</th>
+                            <th>Costo a Pagar CLARO</th>
+                            <th>Estado Pago CLARO</th>
+                            <th style="text-align:right;">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="claroConsignmentsTableBody">
+                        <!-- Loaded dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- 1. INVENTORY -->
         <div id="inventory-tab" class="tab-content active">
+
             <header>
                 <div>
                     <h1>Inventario Global</h1>
@@ -1054,6 +1166,31 @@
                             placeholder="Ej. 256 o 1 TB"></div>
                 </div>
 
+                <!-- CLARO CONSIGNMENT DUAL COST SECTION -->
+                <div style="background: rgba(225, 29, 72, 0.08); padding: 1rem; border-radius: 1rem; border: 1px solid rgba(225, 29, 72, 0.3); margin-bottom: 1.5rem;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+                        <h4 style="color:#f43f5e; margin:0; display:flex; align-items:center; gap:0.5rem;"><i class="fas fa-handshake"></i> Teléfono en Consignación — CLARO</h4>
+                        <label style="display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer; font-weight:700; color:#fff; background:rgba(225, 29, 72, 0.2); padding:0.4rem 0.8rem; border-radius:0.5rem;">
+                            <input type="checkbox" id="newModelIsConsignment" onchange="toggleConsignmentCostFields()" style="width:18px; height:18px; accent-color:#f43f5e;">
+                            <span>Consignación CLARO</span>
+                        </label>
+                    </div>
+                    <div id="consignmentCostFields" style="display:none; margin-top:1rem; border-top:1px dashed rgba(225, 29, 72, 0.3); padding-top:0.75rem;">
+                        <div class="row">
+                            <div class="form-group col">
+                                <label style="color:#f43f5e;">Costo Contado CLARO (L.) *</label>
+                                <input type="number" id="newModelCostCash" min="0" step="0.01" value="0.00" placeholder="0.00">
+                                <small style="color:var(--text-muted); font-size:0.75rem;">Costo a pagar a CLARO si se vende al Contado</small>
+                            </div>
+                            <div class="form-group col">
+                                <label style="color:#f43f5e;">Costo Crédito CLARO (L.) *</label>
+                                <input type="number" id="newModelCostCredit" min="0" step="0.01" value="0.00" placeholder="0.00">
+                                <small style="color:var(--text-muted); font-size:0.75rem;">Costo a pagar a CLARO si se vende al Crédito</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div
                     style="background: rgba(0,0,0,0.1); padding: 1rem; border-radius: 1rem; border: 1px dashed var(--border-color); margin-bottom: 1.5rem;">
                     <h4 style="margin-bottom: 0.5rem; color: var(--success);"><i class="fas fa-lock"></i> Precios y
@@ -1085,11 +1222,8 @@
                             <input type="number" id="newModelCredit" min="0" step="0.01" placeholder="0.00">
                         </div>
                     </div>
-                    <div class="form-group col" style="display:flex; align-items:flex-end;">
-                        <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:1rem;"><i
-                                class="fas fa-info-circle"></i> El descuento fue subido a otra línea.</p>
-                    </div>
                 </div>
+
                 <button type="submit" id="btnSaveModel" class="btn btn-primary w-100-mobile">Guardar Modelo
                     Maestro</button>
             </form>

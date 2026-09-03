@@ -243,6 +243,22 @@ function initDB() {
     try { db.exec('ALTER TABLE sales ADD COLUMN invoice_path TEXT'); } catch(e) { /* exists */ }
     try { db.exec('ALTER TABLE sales ADD COLUMN invoice_thumb TEXT'); } catch(e) { /* exists */ }
 
+    // === SAFE MIGRATION: CLARO Consignment & Dual Costs ===
+    try { db.exec('ALTER TABLE phone_models ADD COLUMN cost_cash REAL DEFAULT 0'); } catch(e) { /* exists */ }
+    try { db.exec('ALTER TABLE phone_models ADD COLUMN cost_credit REAL DEFAULT 0'); } catch(e) { /* exists */ }
+    try { db.exec('ALTER TABLE phone_models ADD COLUMN is_consignment INTEGER DEFAULT 0'); } catch(e) { /* exists */ }
+    try { db.exec("ALTER TABLE phone_models ADD COLUMN provider_name TEXT DEFAULT 'CLARO'"); } catch(e) { /* exists */ }
+
+    try { db.exec('ALTER TABLE phones ADD COLUMN is_consignment INTEGER DEFAULT 0'); } catch(e) { /* exists */ }
+    try { db.exec("ALTER TABLE phones ADD COLUMN provider_name TEXT DEFAULT 'CLARO'"); } catch(e) { /* exists */ }
+    try { db.exec("ALTER TABLE phones ADD COLUMN claro_pay_status TEXT DEFAULT 'No Aplica'"); } catch(e) { /* exists */ }
+    try { db.exec('ALTER TABLE phones ADD COLUMN claro_pay_date DATETIME'); } catch(e) { /* exists */ }
+    try { db.exec('ALTER TABLE phones ADD COLUMN claro_pay_notes TEXT'); } catch(e) { /* exists */ }
+
+    try { db.exec('ALTER TABLE sales ADD COLUMN is_consignment INTEGER DEFAULT 0'); } catch(e) { /* exists */ }
+    try { db.exec("ALTER TABLE sales ADD COLUMN claro_pay_status TEXT DEFAULT 'No Aplica'"); } catch(e) { /* exists */ }
+
+
     // === TRANSFER REQUESTS TABLE (FASE 4) ===
     db.exec(`
         CREATE TABLE IF NOT EXISTS transfer_requests (
@@ -645,16 +661,20 @@ app.get('/api/models', (req, res) => {
     } catch(err) { res.status(500).json({error: err.message}); }
 });
 app.post('/api/models', requireAdmin, (req, res) => {
-    let { name, brand_id, image_url, price_cash, credit_enabled, price_credit, price_wholesale, max_discount, ram, storage, price_cost } = req.body;
+    let { name, brand_id, image_url, price_cash, credit_enabled, price_credit, price_wholesale, max_discount, ram, storage, price_cost, cost_cash, cost_credit, is_consignment, provider_name } = req.body;
     credit_enabled = credit_enabled ? 1 : 0;
+    const isConsignment = is_consignment ? 1 : 0;
+    const provider = provider_name || 'CLARO';
+    const cCash = parseFloat(cost_cash) || parseFloat(price_cost) || 0;
+    const cCredit = parseFloat(cost_credit) || cCash || parseFloat(price_cost) || 0;
     
     if (!name || !brand_id || !price_cash || price_cash <= 0) return res.status(400).json({ error: "Datos incompletos o precio inválido." });
     if (credit_enabled && (!price_credit || price_credit <= 0)) return res.status(400).json({ error: "Especifique el precio de crédito." });
 
     try {
-        const result = db.prepare(`INSERT INTO phone_models (name, brand_id, image_url, price_cash, credit_enabled, price_credit, price_wholesale, max_discount, ram, storage, price_cost) 
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-            name, brand_id, image_url || null, price_cash, credit_enabled, price_credit || null, parseFloat(price_wholesale) || 0, parseFloat(max_discount) || 0, ram || null, storage || null, parseFloat(price_cost) || 0
+        const result = db.prepare(`INSERT INTO phone_models (name, brand_id, image_url, price_cash, credit_enabled, price_credit, price_wholesale, max_discount, ram, storage, price_cost, cost_cash, cost_credit, is_consignment, provider_name) 
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+            name, brand_id, image_url || null, price_cash, credit_enabled, price_credit || null, parseFloat(price_wholesale) || 0, parseFloat(max_discount) || 0, ram || null, storage || null, parseFloat(price_cost) || cCash, cCash, cCredit, isConsignment, provider
         );
         res.json({ id: result.lastInsertRowid, success: true });
     } catch(err) { 
@@ -664,14 +684,19 @@ app.post('/api/models', requireAdmin, (req, res) => {
 });
 
 app.put('/api/models/:id', requireAdmin, (req, res) => {
-    let { name, brand_id, image_url, price_cash, credit_enabled, price_credit, price_wholesale, max_discount, offer_price, ram, storage, price_cost } = req.body;
+    let { name, brand_id, image_url, price_cash, credit_enabled, price_credit, price_wholesale, max_discount, offer_price, ram, storage, price_cost, cost_cash, cost_credit, is_consignment, provider_name } = req.body;
     
     credit_enabled = credit_enabled ? 1 : 0;
+    const isConsignment = is_consignment ? 1 : 0;
+    const provider = provider_name || 'CLARO';
+    const cCash = parseFloat(cost_cash) || parseFloat(price_cost) || 0;
+    const cCredit = parseFloat(cost_credit) || cCash || parseFloat(price_cost) || 0;
+
     if (!price_cash || price_cash <= 0) return res.status(400).json({ error: "El modelo debe tener un precio de contado válido." });
 
     try {
-        db.prepare(`UPDATE phone_models SET name=?, brand_id=?, image_url=?, price_cash=?, credit_enabled=?, price_credit=?, price_wholesale=?, max_discount=?, offer_price=?, ram=?, storage=?, price_cost=? WHERE id=?`).run(
-            name, brand_id, image_url || null, price_cash, credit_enabled, price_credit || null, parseFloat(price_wholesale) || 0, parseFloat(max_discount) || 0, offer_price || null, ram || null, storage || null, parseFloat(price_cost) || 0, req.params.id
+        db.prepare(`UPDATE phone_models SET name=?, brand_id=?, image_url=?, price_cash=?, credit_enabled=?, price_credit=?, price_wholesale=?, max_discount=?, offer_price=?, ram=?, storage=?, price_cost=?, cost_cash=?, cost_credit=?, is_consignment=?, provider_name=? WHERE id=?`).run(
+            name, brand_id, image_url || null, price_cash, credit_enabled, price_credit || null, parseFloat(price_wholesale) || 0, parseFloat(max_discount) || 0, offer_price || null, ram || null, storage || null, parseFloat(price_cost) || cCash, cCash, cCredit, isConsignment, provider, req.params.id
         );
         res.json({ success: true });
     } catch(err) { 
@@ -679,6 +704,7 @@ app.put('/api/models/:id', requireAdmin, (req, res) => {
         res.status(400).json({error: err.message}); 
     }
 });
+
 
 app.put('/api/models/:id/offer', requireAdmin, (req, res) => {
     try {
@@ -1080,6 +1106,105 @@ app.put('/api/liquidations/:id/revert', requireAdmin, (req, res) => {
 });
 
 // ==========================================
+// CLARO CONSIGNMENTS MANAGEMENT
+// ==========================================
+app.get('/api/claro/consignments', (req, res) => {
+    try {
+        const { store, status, q } = req.query;
+
+        let sql = `
+            SELECT p.id, p.imei, p.status as inventory_status, p.store_id, p.is_consignment, p.provider_name,
+                   p.claro_pay_status, p.claro_pay_date, p.claro_pay_notes, p.created_at as entry_date,
+                   m.name as model_name, m.cost_cash, m.cost_credit, m.price_cash, m.price_credit, b.name as brand_name, s.name as store_name,
+                   sl.id as sale_id, sl.sale_date, sl.final_price_type as sale_type, sl.final_price, sl.cost_price as claro_cost
+            FROM phones p
+            JOIN phone_models m ON p.model_id = m.id
+            JOIN brands b ON m.brand_id = b.id
+            JOIN stores s ON p.store_id = s.id
+            LEFT JOIN sales sl ON sl.phone_id = p.id
+            WHERE (p.is_consignment = 1 OR m.is_consignment = 1)
+        `;
+        let params = [];
+
+        if (req.user && req.user.role === 'vendedor' && req.user.store_id) {
+            sql += ` AND p.store_id = ?`;
+            params.push(req.user.store_id);
+        } else if (store && store !== 'ALL') {
+            sql += ` AND p.store_id = ?`;
+            params.push(store);
+        }
+
+        if (status && status !== 'ALL') {
+            if (status === 'Disponible') {
+                sql += ` AND p.status = 'Disponible'`;
+            } else if (status === 'Pendiente') {
+                sql += ` AND p.claro_pay_status = 'Pendiente de Pago'`;
+            } else if (status === 'Pagado') {
+                sql += ` AND p.claro_pay_status = 'Pagado'`;
+            }
+        }
+
+        if (q) {
+            sql += ` AND (LOWER(p.imei) LIKE ? OR LOWER(m.name) LIKE ? OR LOWER(b.name) LIKE ?)`;
+            const search = `%${q.toLowerCase()}%`;
+            params.push(search, search, search);
+        }
+
+        sql += ` ORDER BY p.id DESC`;
+        const rows = db.prepare(sql).all(...params);
+
+        // Global KPIs for CLARO Consignments
+        const totalReceived = db.prepare("SELECT COUNT(*) as cnt FROM phones p JOIN phone_models m ON p.model_id = m.id WHERE (p.is_consignment = 1 OR m.is_consignment = 1)").get().cnt;
+        const availableCount = db.prepare("SELECT COUNT(*) as cnt FROM phones p JOIN phone_models m ON p.model_id = m.id WHERE (p.is_consignment = 1 OR m.is_consignment = 1) AND p.status = 'Disponible'").get().cnt;
+        
+        const pendingSales = db.prepare("SELECT COUNT(*) as cnt, SUM(sl.cost_price) as total_amount FROM phones p JOIN phone_models m ON p.model_id = m.id JOIN sales sl ON sl.phone_id = p.id WHERE (p.is_consignment = 1 OR m.is_consignment = 1) AND p.claro_pay_status = 'Pendiente de Pago'").get();
+        const paidSales = db.prepare("SELECT COUNT(*) as cnt, SUM(sl.cost_price) as total_amount FROM phones p JOIN phone_models m ON p.model_id = m.id JOIN sales sl ON sl.phone_id = p.id WHERE (p.is_consignment = 1 OR m.is_consignment = 1) AND p.claro_pay_status = 'Pagado'").get();
+
+        res.json({
+            kpis: {
+                total_received: totalReceived || 0,
+                available_count: availableCount || 0,
+                pending_count: pendingSales.cnt || 0,
+                pending_amount: pendingSales.total_amount || 0,
+                paid_count: paidSales.cnt || 0,
+                paid_amount: paidSales.total_amount || 0
+            },
+            phones: rows
+        });
+    } catch (err) {
+        console.error('Fetch CLARO Consignments Error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/claro/pay', requireAdmin, (req, res) => {
+    try {
+        const { phone_ids, notes } = req.body;
+        if (!Array.isArray(phone_ids) || phone_ids.length === 0) {
+            return res.status(400).json({ error: "Seleccione al menos un teléfono para marcar como pagado a CLARO." });
+        }
+
+        const now = getLocalTime();
+        const payNotes = notes || 'Pago procesado a CLARO';
+
+        const updatePhone = db.prepare("UPDATE phones SET claro_pay_status = 'Pagado', claro_pay_date = ?, claro_pay_notes = ? WHERE id = ?");
+        const updateSale = db.prepare("UPDATE sales SET claro_pay_status = 'Pagado' WHERE phone_id = ?");
+
+        const executePay = db.transaction((ids) => {
+            for (const id of ids) {
+                updatePhone.run(now, payNotes, id);
+                updateSale.run(id);
+            }
+        });
+
+        executePay(phone_ids);
+        res.json({ success: true, paid_count: phone_ids.length });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+// ==========================================
 // EXPORT CATALOG (DYNAMIC NO-CACHE)
 // ==========================================
 app.get(['/api/export-catalog', '/catalogo_existencias.html'], (req, res) => {
@@ -1087,9 +1212,9 @@ app.get(['/api/export-catalog', '/catalogo_existencias.html'], (req, res) => {
         const stores = db.prepare('SELECT * FROM stores ORDER BY id').all();
         // Master prices are pulled statically from phone_models (m.price_cash)
         const rows = db.prepare(`
-            SELECT b.name as brand_name, m.name as model_name, m.price_cash, m.price_credit, m.credit_enabled, m.offer_price, m.image_url, m.ram, m.storage, s.name as store_name, COUNT(p.id) as count
+            SELECT b.name as brand_name, m.name as model_name, m.price_cash, m.price_credit, m.credit_enabled, m.offer_price, m.image_url, m.ram, m.storage, m.is_consignment, m.provider_name, s.name as store_name, COUNT(p.id) as count
             FROM phones p JOIN phone_models m ON p.model_id = m.id JOIN brands b ON m.brand_id = b.id JOIN stores s ON p.store_id = s.id
-            WHERE p.status = 'Disponible' GROUP BY b.name, m.name, m.price_cash, m.price_credit, m.credit_enabled, m.offer_price, m.image_url, m.ram, m.storage, s.name
+            WHERE p.status = 'Disponible' GROUP BY b.name, m.name, m.price_cash, m.price_credit, m.credit_enabled, m.offer_price, m.image_url, m.ram, m.storage, m.is_consignment, m.provider_name, s.name
         `).all();
 
         const catalogDataMap = {};
@@ -1108,7 +1233,7 @@ app.get(['/api/export-catalog', '/catalogo_existencias.html'], (req, res) => {
                 catalogDataMap[key] = { 
                     brand: row.brand_name, model: row.model_name, condition: 'Nuevo/Stock', 
                     image_url: img, price: row.price_cash, price_credit: fallbackCredit, credit_enabled: row.credit_enabled,
-                    offer_price: row.offer_price,
+                    offer_price: row.offer_price, is_consignment: row.is_consignment || 0, provider_name: row.provider_name || 'CLARO',
                     ram: row.ram, storage: row.storage, total: 0, stock_por_tienda: {} 
                 };
                 stores.forEach(s => { catalogDataMap[key].stock_por_tienda[s.name] = 0; });
@@ -1116,6 +1241,7 @@ app.get(['/api/export-catalog', '/catalogo_existencias.html'], (req, res) => {
             catalogDataMap[key].stock_por_tienda[row.store_name] += row.count;
             catalogDataMap[key].total += row.count;
         });
+
 
         const catalogDataArray = Object.values(catalogDataMap).sort((a, b) => b.total - a.total);
         const storesNames = stores.map(s => s.name);
@@ -1194,12 +1320,17 @@ app.get(['/api/export-catalog', '/catalogo_existencias.html'], (req, res) => {
             ${catalogDataArray.map(item => `
             <div class="card" data-brand="${item.brand}" data-model="${item.model.toLowerCase()}" data-stores='${JSON.stringify(item.stock_por_tienda)}'>
                 <div class="card-img-wrapper">
-                    ${item.offer_price > 0 ? '<span style="position:absolute;top:1rem;left:1rem;background:var(--danger);color:white;padding:0.3rem 0.8rem;border-radius:1rem;font-size:0.8rem;font-weight:bold;z-index:2;">¡OFERTA!</span>' : ''}
+                    ${item.is_consignment ? '<span style="position:absolute;top:1rem;left:1rem;background:#e11d48;color:white;padding:0.35rem 0.85rem;border-radius:1rem;font-size:0.75rem;font-weight:700;z-index:2;box-shadow:0 2px 10px rgba(225,29,72,0.4);"><i class="fas fa-sim-card"></i> Compañía CLARO</span>' : ''}
+                    ${item.offer_price > 0 ? `<span style="position:absolute;top:${item.is_consignment ? '3.2rem' : '1rem'};left:1rem;background:var(--danger);color:white;padding:0.3rem 0.8rem;border-radius:1rem;font-size:0.8rem;font-weight:bold;z-index:2;">¡OFERTA!</span>` : ''}
                     <span class="total-badge">${item.total} Uni.</span>
                     <img src="${item.image_url}" class="card-img" loading="lazy" onerror="this.src='https://via.placeholder.com/400x400?text=Phone'">
                 </div>
                 <div class="card-content">
-                    <div class="brand-label">${item.brand}</div>
+                    <div class="brand-label" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>${item.brand}</span>
+                        ${item.is_consignment ? '<span style="color:#f43f5e; font-size:0.7rem; font-weight:700;"><i class="fas fa-certificate"></i> CLARO</span>' : ''}
+                    </div>
+
                     <h2 class="model-name">${item.model}${(item.ram || item.storage) ? ' &mdash; ' + (item.ram || 'N/A') + ' / ' + (item.storage || 'N/A') : ''}</h2>
                     <div class="specs-bar">
                         <div class="spec-item"><i class="fas fa-microchip"></i> ${item.ram || '<span style="color:#475569">N/A</span>'}</div>

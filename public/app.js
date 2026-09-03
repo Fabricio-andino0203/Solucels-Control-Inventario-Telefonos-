@@ -213,6 +213,7 @@ function switchTab(tabId) {
 
     if (window.innerWidth <= 820) toggleSidebar();
     if (tabId === 'dashboard-tab' && isAdmin) { loadDashboard(); }
+    else if (tabId === 'claro-consignments-tab') { loadClaroConsignments(); }
     else if (tabId === 'transfers-tab') { applyTransferFilters(); document.getElementById('transfersImeiSearch')?.focus(); }
     else if (tabId === 'sales-tab') { fetchSales(); document.getElementById('salesImeiSearch')?.focus(); }
     else if (tabId === 'warranties-tab') { fetchWarranties(); document.getElementById('warrantiesSearch')?.focus(); }
@@ -224,6 +225,7 @@ function switchTab(tabId) {
     else if (tabId === 'revision-tab') { fetchRevisionPhones(); }
     else if (tabId === 'inventory-tab') { fetchAllData(); }
 }
+
 
 function toggleAccordion(groupName) {
     const group = document.querySelector(`.acc-group[data-group="${groupName}"]`);
@@ -425,6 +427,8 @@ function renderPhonesTable(phonesData) {
     let totalVal = 0;
     tbody.innerHTML = phonesData.map(p => {
         totalVal += (p.price_cash || 0);
+        const isConsign = (p.is_consignment === 1 || p.model_is_consignment === 1);
+        const claroBadge = isConsign ? '<span class="badge" style="background:#e11d48; color:#fff; font-size:0.7rem; margin-top:0.25rem; display:inline-block;"><i class="fas fa-sim-card"></i> CLARO</span>' : '';
 
         let priceStr = `Cont: L. ${p.price_cash.toLocaleString('en-US')}`;
         if (p.price_wholesale) priceStr += `<br><small style="color:var(--success)">May: L. ${p.price_wholesale.toLocaleString('en-US')}</small>`;
@@ -436,7 +440,7 @@ function renderPhonesTable(phonesData) {
 
         return `<tr>
             <td class="img-cell" data-label="Img"><img src="${p.image_url || 'https://via.placeholder.com/150/1f2937/fff?text=' + encodeURIComponent(p.brand_name)}" class="tbl-img"></td>
-            <td data-label="Marca / Modelo"><small style="color:var(--text-muted);">${p.brand_name}</small><br><strong>${p.model_name}</strong><br><small style="color:var(--text-primary)"><i class="fas fa-microchip"></i> ${p.ram || 'N/A'} | <i class="fas fa-hdd"></i> ${p.storage || 'N/A'}</small></td>
+            <td data-label="Marca / Modelo"><small style="color:var(--text-muted);">${p.brand_name}</small><br><strong>${p.model_name}</strong>${claroBadge}<br><small style="color:var(--text-primary)"><i class="fas fa-microchip"></i> ${p.ram || 'N/A'} | <i class="fas fa-hdd"></i> ${p.storage || 'N/A'}</small></td>
             <td data-label="IMEI / S/N"><span style="font-family:monospace">${p.imei}</span></td>
             <td data-label="Catálogo Maestro">${priceStr}</td>
             <td data-label="Ubicación">${p.store_name}</td>
@@ -486,12 +490,15 @@ function renderPosCards(phonesData) {
         return;
     }
 
-    grid.innerHTML = phonesData.map(p => `
+    grid.innerHTML = phonesData.map(p => {
+        const isConsign = (p.is_consignment === 1 || p.model_is_consignment === 1);
+        const claroBadge = isConsign ? '<span style="background:#e11d48; color:#fff; font-size:0.68rem; padding:0.15rem 0.5rem; border-radius:0.4rem; font-weight:700; margin-left:0.3rem;"><i class="fas fa-sim-card"></i> CLARO</span>' : '';
+        return `
         <div class="pos-card" id="pos-card-${p.id}">
             <div class="pos-card-header">
                 <img src="${p.image_url || 'https://via.placeholder.com/150/1f2937/fff?text=' + encodeURIComponent(p.brand_name)}" class="pos-card-img" alt="${p.model_name}">
                 <div class="pos-card-title">
-                    <span style="text-transform:uppercase; font-size:0.75rem; color:var(--primary); font-weight:700;">${p.brand_name}</span>
+                    <span style="text-transform:uppercase; font-size:0.75rem; color:var(--primary); font-weight:700;">${p.brand_name} ${claroBadge}</span>
                     <h3>${p.model_name}</h3>
                     <span>${p.ram || 'N/A'} RAM / ${p.storage || 'N/A'} Storage</span>
                 </div>
@@ -516,8 +523,10 @@ function renderPosCards(phonesData) {
                 </button>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
+
 
 function renderTransfersTable() {
     const tbody = document.querySelector('#transfersTable tbody');
@@ -1735,13 +1744,21 @@ async function addModel(e) {
         return s;
     };
 
+    const isConsignment = document.getElementById('newModelIsConsignment')?.checked ? 1 : 0;
+    const costCash = parseFloat(document.getElementById('newModelCostCash')?.value) || 0;
+    const costCredit = parseFloat(document.getElementById('newModelCostCredit')?.value) || 0;
+
     const payload = {
         name: document.getElementById('newModelName').value,
         brand_id: document.getElementById('newModelBrand').value,
         image_url: document.getElementById('newModelImage').value,
         ram: formatMem(ramVal),
         storage: formatMem(storageVal),
-        price_cost: parseFloat(document.getElementById('newModelCostPrice').value) || 0,
+        price_cost: parseFloat(document.getElementById('newModelCostPrice').value) || costCash || 0,
+        cost_cash: costCash,
+        cost_credit: costCredit,
+        is_consignment: isConsignment,
+        provider_name: 'CLARO',
         price_cash: parseFloat(document.getElementById('newModelCash').value),
         price_wholesale: parseFloat(document.getElementById('newModelWholesale').value) || 0,
         max_discount: parseFloat(document.getElementById('newModelMaxDiscount').value) || 0,
@@ -1754,6 +1771,11 @@ async function addModel(e) {
         showToast('Atención: Si aplica a crédito, debe ingresar un precio mayor a 0', true);
         return false;
     }
+    if (isConsignment && costCash <= 0) {
+        showToast('Atención: Para modelos de CLARO debe especificar el Costo al Contado', true);
+        return false;
+    }
+
     try {
         let res;
         if (editId) {
@@ -1768,6 +1790,12 @@ async function addModel(e) {
     return false;
 }
 
+function toggleConsignmentCostFields() {
+    const isConsignment = document.getElementById('newModelIsConsignment')?.checked;
+    const fields = document.getElementById('consignmentCostFields');
+    if (fields) fields.style.display = isConsignment ? 'block' : 'none';
+}
+
 function openEditModelModal(id) {
     const m = state.models.find(x => x.id === id);
     if (!m) return;
@@ -1779,6 +1807,19 @@ function openEditModelModal(id) {
     document.getElementById('newModelStorage').value = m.storage || '';
     const costInput = document.getElementById('newModelCostPrice');
     if(costInput) costInput.value = m.price_cost || 0;
+    
+    // CLARO Consignment fields
+    const isConsign = m.is_consignment === 1;
+    const isConsignCb = document.getElementById('newModelIsConsignment');
+    if (isConsignCb) {
+        isConsignCb.checked = isConsign;
+        toggleConsignmentCostFields();
+    }
+    const costCashInput = document.getElementById('newModelCostCash');
+    if (costCashInput) costCashInput.value = m.cost_cash || m.price_cost || 0;
+    const costCreditInput = document.getElementById('newModelCostCredit');
+    if (costCreditInput) costCreditInput.value = m.cost_credit || m.cost_cash || m.price_cost || 0;
+
     document.getElementById('newModelCash').value = m.price_cash;
     document.getElementById('newModelWholesale').value = m.price_wholesale || 0;
     document.getElementById('newModelMaxDiscount').value = m.max_discount || 0;
@@ -1793,6 +1834,7 @@ function openEditModelModal(id) {
 
     openModal('modelModal');
 }
+
 async function deleteConfig(type, id) {
     if (!confirm('¿Eliminar bloque protegido?')) return;
     try { const res = await fetchAuth(`${API_URL}/${type}/${id}`, { method: 'DELETE' }); if (!res.ok) throw new Error((await res.json()).error); fetchConfig(); } catch (err) { showToast(err.message, true); }
@@ -3784,5 +3826,238 @@ async function requestTransfer(modelId, fromStoreId, fromStoreName) {
         showToast(`🚀 Solicitud de traslado enviada a ${fromStoreName}`);
     } catch (err) { showToast(err.message, true); }
 }
+
+// ==========================================
+// CLARO CONSIGNMENTS MANAGEMENT (FRONTEND)
+// ==========================================
+let claroConsignmentsState = {
+    kpis: {},
+    phones: [],
+    selectedPhoneIds: new Set()
+};
+
+async function loadClaroConsignments() {
+    try {
+        const qInput = document.getElementById('claroSearchInput');
+        const statusSelect = document.getElementById('claroStatusFilter');
+        const storeSelect = document.getElementById('claroStoreFilter');
+
+        const q = qInput ? qInput.value.trim() : '';
+        const status = statusSelect ? statusSelect.value : 'Pendiente';
+        const store = storeSelect ? storeSelect.value : 'ALL';
+
+        // Populate store select if needed
+        if (storeSelect && storeSelect.options.length <= 1 && state.stores) {
+            storeSelect.innerHTML = '<option value="ALL">Todas las Tiendas</option>' +
+                state.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+            storeSelect.value = store;
+        }
+
+        const queryParams = new URLSearchParams();
+        if (q) queryParams.append('q', q);
+        if (status) queryParams.append('status', status);
+        if (store) queryParams.append('store', store);
+
+        const res = await fetchAuth(`${API_URL}/claro/consignments?${queryParams.toString()}`);
+        if (!res.ok) throw new Error((await res.json()).error);
+
+        const data = await res.json();
+        claroConsignmentsState.kpis = data.kpis || {};
+        claroConsignmentsState.phones = data.phones || [];
+        claroConsignmentsState.selectedPhoneIds.clear();
+
+        renderClaroKPIs(data.kpis);
+        renderClaroTable(data.phones);
+        updateClaroBulkPayButton();
+    } catch (err) {
+        console.error('Error cargando consignaciones CLARO:', err.message);
+        showToast('Error cargando consignaciones CLARO: ' + err.message, true);
+    }
+}
+
+function renderClaroKPIs(kpis) {
+    if (!kpis) return;
+    const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
+    
+    setTxt('claro-kpi-total', kpis.total_received || 0);
+    setTxt('claro-kpi-available', kpis.available_count || 0);
+    setTxt('claro-kpi-pending-count', kpis.pending_count || 0);
+    setTxt('claro-kpi-pending-amount', `L. ${(kpis.pending_amount || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`);
+    setTxt('claro-kpi-paid-count', kpis.paid_count || 0);
+    setTxt('claro-kpi-paid-amount', `L. ${(kpis.paid_amount || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} pagados`);
+}
+
+function renderClaroTable(phones) {
+    const tbody = document.getElementById('claroConsignmentsTableBody');
+    if (!tbody) return;
+
+    if (!phones || phones.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="10" class="text-center" style="padding:2rem; color:var(--text-muted);">
+                    <i class="fas fa-search" style="font-size:2rem; margin-bottom:0.5rem; opacity:0.5; display:block;"></i>
+                    No se encontraron teléfonos en consignación CLARO con los filtros seleccionados.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    const selectAll = document.getElementById('claroSelectAll');
+    if (selectAll) selectAll.checked = false;
+
+    tbody.innerHTML = phones.map(p => {
+        const isSold = p.inventory_status === 'Vendido';
+        const isPaid = p.claro_pay_status === 'Pagado';
+        const isPending = p.claro_pay_status === 'Pendiente de Pago';
+
+        let statusBadge = '';
+        if (p.inventory_status === 'Disponible') {
+            statusBadge = '<span class="badge" style="background:rgba(59,130,246,0.15); color:#3b82f6; border:1px solid rgba(59,130,246,0.3);"><i class="fas fa-box"></i> En Tienda (Disponible)</span>';
+        } else {
+            statusBadge = '<span class="badge" style="background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3);"><i class="fas fa-shopping-cart"></i> Vendido</span>';
+        }
+
+        let payStatusBadge = '';
+        if (isPaid) {
+            payStatusBadge = `<span class="badge" style="background:rgba(16,185,129,0.2); color:#10b981; border:1px solid #10b981;" title="${p.claro_pay_notes || ''}"><i class="fas fa-check-circle"></i> Pagado a CLARO</span>`;
+        } else if (isPending) {
+            payStatusBadge = '<span class="badge" style="background:rgba(245,158,11,0.2); color:#fbbf24; border:1px solid #f59e0b; animation:pulse-warn 2s infinite;"><i class="fas fa-exclamation-triangle"></i> Pendiente Pago CLARO</span>';
+        } else {
+            payStatusBadge = '<span class="badge" style="background:rgba(255,255,255,0.05); color:var(--text-muted);">Sin vender</span>';
+        }
+
+        // Applicable Cost depending on sale type or default cost_cash
+        const costToPay = p.claro_cost ? p.claro_cost : (p.sale_type === 'Crédito' ? (p.cost_credit || p.cost_cash) : p.cost_cash);
+
+        return `
+            <tr style="${isPending ? 'background:rgba(245,158,11,0.03);' : ''}">
+                <td style="text-align:center;">
+                    ${isPending ? `<input type="checkbox" class="claro-checkbox" value="${p.id}" onchange="onClaroCheckboxChange(${p.id}, this.checked)">` : '-'}
+                </td>
+                <td>
+                    <strong style="font-family:monospace; font-size:0.95rem; color:var(--text-main);">${p.imei}</strong>
+                    <span style="display:block; font-size:0.75rem; color:#f43f5e; font-weight:700;"><i class="fas fa-sim-card"></i> CLARO</span>
+                </td>
+                <td>
+                    <strong style="color:var(--text-main);">${p.brand_name} ${p.model_name}</strong>
+                </td>
+                <td><span style="color:var(--text-muted);">${p.store_name}</span></td>
+                <td>${statusBadge}</td>
+                <td>${p.sale_date ? p.sale_date.split(' ')[0] : '<span style="color:var(--text-muted);">-</span>'}</td>
+                <td>${p.sale_type ? `<span style="font-weight:600; color:${p.sale_type==='Crédito'?'#fbbf24':'var(--success)'}">${p.sale_type}</span>` : '-'}</td>
+                <td>
+                    <strong style="color:#fbbf24; font-size:1.05rem;">L. ${(costToPay || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</strong>
+                    <span style="display:block; font-size:0.7rem; color:var(--text-muted);">${p.sale_type==='Crédito'?'Costo Crédito':'Costo Contado'}</span>
+                </td>
+                <td>
+                    ${payStatusBadge}
+                    ${p.claro_pay_date ? `<small style="display:block; font-size:0.72rem; color:var(--text-muted); margin-top:0.2rem;"><i class="fas fa-calendar-alt"></i> ${p.claro_pay_date.split(' ')[0]}</small>` : ''}
+                </td>
+                <td style="text-align:right;">
+                    ${isPending ? `
+                        <button class="btn btn-sm" onclick="paySingleClaro(${p.id}, '${p.imei}', ${costToPay})" style="background:#10b981; color:#fff; font-weight:600; padding:0.4rem 0.75rem;">
+                            <i class="fas fa-check"></i> Pagar a CLARO
+                        </button>
+                    ` : (isPaid ? `<span style="color:var(--success); font-size:0.85rem;"><i class="fas fa-check-double"></i> Liquidado</span>` : `<span style="color:var(--text-muted); font-size:0.8rem;">En inventario</span>`)}
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function onClaroCheckboxChange(phoneId, isChecked) {
+    if (isChecked) claroConsignmentsState.selectedPhoneIds.add(phoneId);
+    else claroConsignmentsState.selectedPhoneIds.delete(phoneId);
+    updateClaroBulkPayButton();
+}
+
+function toggleSelectAllClaro(masterCheckbox) {
+    const checkboxes = document.querySelectorAll('.claro-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = masterCheckbox.checked;
+        const id = parseInt(cb.value);
+        if (masterCheckbox.checked) claroConsignmentsState.selectedPhoneIds.add(id);
+        else claroConsignmentsState.selectedPhoneIds.delete(id);
+    });
+    updateClaroBulkPayButton();
+}
+
+function updateClaroBulkPayButton() {
+    const btn = document.getElementById('btnPaySelectedClaro');
+    const count = claroConsignmentsState.selectedPhoneIds.size;
+    if (btn) {
+        if (count > 0) {
+            btn.style.display = 'inline-flex';
+            btn.innerHTML = `<i class="fas fa-check-double"></i> Marcar ${count} Seleccionado(s) como Pagados`;
+        } else {
+            btn.style.display = 'none';
+        }
+    }
+}
+
+async function paySingleClaro(phoneId, imei, amount) {
+    const notes = prompt(`Confirmar pago a CLARO para equipo IMEI: ${imei}\nMonto a pagar: L. ${amount.toLocaleString('en-US', {minimumFractionDigits:2})}\n\nIngrese número de comprobante/referencia de pago:`, `Pago CLARO IMEI ${imei}`);
+    if (notes === null) return; // Cancelled
+
+    try {
+        const res = await fetchAuth(`${API_URL}/claro/pay`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone_ids: [phoneId], notes })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        showToast('Pago registrado a CLARO correctamente');
+        loadClaroConsignments();
+    } catch (err) {
+        showToast(err.message, true);
+    }
+}
+
+async function paySelectedClaro() {
+    const ids = Array.from(claroConsignmentsState.selectedPhoneIds);
+    if (ids.length === 0) return;
+
+    const notes = prompt(`Confirmar pago masivo a CLARO para ${ids.length} equipo(s).\n\nIngrese número de comprobante/referencia de pago a CLARO:`, `Pago Lote CLARO (${ids.length} equipos)`);
+    if (notes === null) return;
+
+    try {
+        const res = await fetchAuth(`${API_URL}/claro/pay`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone_ids: ids, notes })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        showToast(`Pago procesado correctamente para ${data.paid_count} equipo(s) a CLARO`);
+        loadClaroConsignments();
+    } catch (err) {
+        showToast(err.message, true);
+    }
+}
+
+function exportClaroReport() {
+    if (!claroConsignmentsState.phones || claroConsignmentsState.phones.length === 0) {
+        showToast('No hay datos para exportar', true);
+        return;
+    }
+
+    let csv = 'IMEI,Marca,Modelo,Tienda,Estado Inventario,Fecha Venta,Tipo Venta,Precio Venta (L.),Costo Pagar CLARO (L.),Estado Pago CLARO,Fecha Pago CLARO,Notas Pago\n';
+    claroConsignmentsState.phones.forEach(p => {
+        const costToPay = p.claro_cost ? p.claro_cost : (p.sale_type === 'Crédito' ? (p.cost_credit || p.cost_cash) : p.cost_cash);
+        csv += `"${p.imei}","${p.brand_name}","${p.model_name}","${p.store_name}","${p.inventory_status}","${p.sale_date||''}","${p.sale_type||''}","${p.final_price||0}","${costToPay||0}","${p.claro_pay_status}","${p.claro_pay_date||''}","${(p.claro_pay_notes||'').replace(/"/g, '""')}"\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Reporte_Consignaciones_CLARO_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+}
+
 
 
