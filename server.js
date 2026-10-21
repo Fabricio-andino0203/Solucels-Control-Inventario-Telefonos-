@@ -243,7 +243,7 @@ function initDB() {
     try { db.exec('ALTER TABLE sales ADD COLUMN invoice_path TEXT'); } catch(e) { /* exists */ }
     try { db.exec('ALTER TABLE sales ADD COLUMN invoice_thumb TEXT'); } catch(e) { /* exists */ }
 
-    // === SAFE MIGRATION: CLARO Consignment & Dual Costs ===
+    // === SAFE MIGRATION: CLARO Consignment, Dual Costs & Receipts ===
     try { db.exec('ALTER TABLE phone_models ADD COLUMN cost_cash REAL DEFAULT 0'); } catch(e) { /* exists */ }
     try { db.exec('ALTER TABLE phone_models ADD COLUMN cost_credit REAL DEFAULT 0'); } catch(e) { /* exists */ }
     try { db.exec('ALTER TABLE phone_models ADD COLUMN is_consignment INTEGER DEFAULT 0'); } catch(e) { /* exists */ }
@@ -254,9 +254,37 @@ function initDB() {
     try { db.exec("ALTER TABLE phones ADD COLUMN claro_pay_status TEXT DEFAULT 'No Aplica'"); } catch(e) { /* exists */ }
     try { db.exec('ALTER TABLE phones ADD COLUMN claro_pay_date DATETIME'); } catch(e) { /* exists */ }
     try { db.exec('ALTER TABLE phones ADD COLUMN claro_pay_notes TEXT'); } catch(e) { /* exists */ }
+    try { db.exec('ALTER TABLE phones ADD COLUMN claro_receipt_path TEXT'); } catch(e) { /* exists */ }
+    try { db.exec('ALTER TABLE phones ADD COLUMN claro_receipt_thumb TEXT'); } catch(e) { /* exists */ }
 
     try { db.exec('ALTER TABLE sales ADD COLUMN is_consignment INTEGER DEFAULT 0'); } catch(e) { /* exists */ }
     try { db.exec("ALTER TABLE sales ADD COLUMN claro_pay_status TEXT DEFAULT 'No Aplica'"); } catch(e) { /* exists */ }
+    try { db.exec('ALTER TABLE sales ADD COLUMN claro_receipt_path TEXT'); } catch(e) { /* exists */ }
+    try { db.exec('ALTER TABLE sales ADD COLUMN claro_receipt_thumb TEXT'); } catch(e) { /* exists */ }
+
+    // Sincronización automática de equipos y ventas de consignación CLARO
+    try {
+        db.exec(`
+            UPDATE phones 
+            SET is_consignment = 1,
+                provider_name = 'CLARO',
+                claro_pay_status = CASE 
+                    WHEN status = 'Disponible' THEN 'Disponible'
+                    WHEN status = 'Vendido' AND (claro_pay_status IS NULL OR claro_pay_status = 'No Aplica' OR claro_pay_status = '') THEN 'Pendiente de Pago'
+                    ELSE claro_pay_status
+                END
+            WHERE model_id IN (SELECT id FROM phone_models WHERE is_consignment = 1);
+
+            UPDATE sales
+            SET is_consignment = 1,
+                claro_pay_status = CASE
+                    WHEN claro_pay_status IS NULL OR claro_pay_status = 'No Aplica' OR claro_pay_status = '' THEN 'Pendiente de Pago'
+                    ELSE claro_pay_status
+                END
+            WHERE phone_id IN (SELECT p.id FROM phones p JOIN phone_models m ON p.model_id = m.id WHERE p.is_consignment = 1 OR m.is_consignment = 1);
+        `);
+    } catch(e) { /* ignore */ }
+
 
 
     // === TRANSFER REQUESTS TABLE (FASE 4) ===
@@ -780,8 +808,13 @@ app.post('/api/phones', requireAdmin, (req, res) => {
 
     try {
         const now = getLocalTime();
-        const stmt = db.prepare(`INSERT INTO phones (imei, model_id, store_id, condition, created_at) VALUES (?, ?, ?, 'Nuevo', ?)`);
-        const info = stmt.run(cleanImei, model_id, store_id, now);
+        const model = db.prepare('SELECT is_consignment, provider_name FROM phone_models WHERE id = ?').get(model_id);
+        const isConsign = (model && model.is_consignment === 1) ? 1 : 0;
+        const providerName = (model && model.provider_name) || 'CLARO';
+        const claroStatus = isConsign ? 'Disponible' : 'No Aplica';
+
+        const stmt = db.prepare(`INSERT INTO phones (imei, model_id, store_id, condition, created_at, is_consignment, provider_name, claro_pay_status) VALUES (?, ?, ?, 'Nuevo', ?, ?, ?, ?)`);
+        const info = stmt.run(cleanImei, model_id, store_id, now, isConsign, providerName, claroStatus);
         res.json({ id: info.lastInsertRowid, success: true });
     } catch (err) {
         if(err.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(400).json({ error: "El identificador ya se encuentra registrado en el sistema." });
@@ -799,7 +832,12 @@ app.post('/api/phones/bulk', requireAdmin, (req, res) => {
     if (!model_id || !store_id) return res.status(400).json({ error: 'Faltan parámetros críticos (Modelo/Tienda)' });
     if (!Array.isArray(imeis) || imeis.length === 0) return res.status(400).json({ error: 'La lista de IMEIs está vacía' });
 
-    const stmt = db.prepare(`INSERT INTO phones (imei, model_id, store_id, condition, created_at) VALUES (?, ?, ?, 'Nuevo', ?)`);
+    const model = db.prepare('SELECT is_consignment, provider_name FROM phone_models WHERE id = ?').get(model_id);
+    const isConsign = (model && model.is_consignment === 1) ? 1 : 0;
+    const providerName = (model && model.provider_name) || 'CLARO';
+    const claroStatus = isConsign ? 'Disponible' : 'No Aplica';
+
+    const stmt = db.prepare(`INSERT INTO phones (imei, model_id, store_id, condition, created_at, is_consignment, provider_name, claro_pay_status) VALUES (?, ?, ?, 'Nuevo', ?, ?, ?, ?)`);
     let results = { inserted: 0, duplicates: 0, others: 0 };
 
     // Usamos una transacción para máxima velocidad
@@ -809,7 +847,7 @@ app.post('/api/phones/bulk', requireAdmin, (req, res) => {
             const clean = raw.toString().trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
             if (!clean) continue;
             try {
-                stmt.run(clean, model_id, store_id, now);
+                stmt.run(clean, model_id, store_id, now, isConsign, providerName, claroStatus);
                 results.inserted++;
             } catch (err) {
                 if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -821,6 +859,7 @@ app.post('/api/phones/bulk', requireAdmin, (req, res) => {
             }
         }
     });
+
 
     try {
         executeBulk(imeis);
@@ -922,7 +961,9 @@ app.post('/api/sales', upload.single('invoice'), async (req, res) => {
             return res.status(400).json({ error: "Requisito Obligatorio: Debe adjuntar la fotografía o comprobante de la factura de venta." });
         }
 
-        const phone = db.prepare(`SELECT p.id, p.status, p.store_id, m.price_cash, m.credit_enabled, m.price_credit, m.price_wholesale, m.max_discount, m.offer_price, m.price_cost 
+        const phone = db.prepare(`SELECT p.id, p.status, p.store_id, p.is_consignment as phone_is_consignment,
+                                         m.is_consignment as model_is_consignment, m.cost_cash, m.cost_credit,
+                                         m.price_cash, m.credit_enabled, m.price_credit, m.price_wholesale, m.max_discount, m.offer_price, m.price_cost 
                                   FROM phones p JOIN phone_models m ON p.model_id = m.id WHERE p.id=?`).get(phone_id);
         
         if (!phone) return res.status(404).json({error: "Unidad física no encontrada en base de datos."});
@@ -975,6 +1016,20 @@ app.post('/api/sales', upload.single('invoice'), async (req, res) => {
             saldo = 0;
         }
 
+        // Lógica de Consignación CLARO y Doble Costo
+        const isConsign = (phone.phone_is_consignment === 1 || phone.model_is_consignment === 1) ? 1 : 0;
+        let costToRecord = phone.price_cost || 0;
+        let claroPayStatus = 'No Aplica';
+
+        if (isConsign) {
+            claroPayStatus = 'Pendiente de Pago';
+            if (actPriceType === 'Crédito') {
+                costToRecord = phone.cost_credit || phone.cost_cash || phone.price_cost || 0;
+            } else {
+                costToRecord = phone.cost_cash || phone.price_cost || 0;
+            }
+        }
+
         db.transaction(() => {
             let finalDate = sale_date;
             if (!finalDate) {
@@ -983,10 +1038,15 @@ app.post('/api/sales', upload.single('invoice'), async (req, res) => {
                 finalDate += " 12:00:00";
             }
 
-            db.prepare("UPDATE phones SET status='Vendido' WHERE id=?").run(phone_id);
-            const stmt = db.prepare(`INSERT INTO sales (phone_id, store_id, sale_type, final_price, prima, saldo, payment_status, client_name, installments, notes, discount, final_price_type, sale_date, cost_price, sold_by, invoice_path, invoice_thumb) 
-                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-            stmt.run(phone_id, store_id, sale_type || actPriceType, final_price, actPrima, saldo, payment_status, defaultClient, null, notes || '', actDiscount, actPriceType, finalDate, phone.price_cost || 0, req.user.id, invoicePaths.path, invoicePaths.thumb);
+            if (isConsign) {
+                db.prepare("UPDATE phones SET status='Vendido', is_consignment=1, claro_pay_status='Pendiente de Pago' WHERE id=?").run(phone_id);
+            } else {
+                db.prepare("UPDATE phones SET status='Vendido' WHERE id=?").run(phone_id);
+            }
+
+            const stmt = db.prepare(`INSERT INTO sales (phone_id, store_id, sale_type, final_price, prima, saldo, payment_status, client_name, installments, notes, discount, final_price_type, sale_date, cost_price, sold_by, invoice_path, invoice_thumb, is_consignment, claro_pay_status) 
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            stmt.run(phone_id, store_id, sale_type || actPriceType, final_price, actPrima, saldo, payment_status, defaultClient, null, notes || '', actDiscount, actPriceType, finalDate, costToRecord, req.user.id, invoicePaths.path, invoicePaths.thumb, isConsign, claroPayStatus);
         })();
         res.json({ success: true, final_price });
     } catch(err) { res.status(400).json({error: err.message}); }
@@ -1020,17 +1080,20 @@ app.get('/api/sales', (req, res) => {
 
 app.delete('/api/sales/:id', requireAdmin, (req, res) => {
     try {
-
         const sale = db.prepare('SELECT * FROM sales WHERE id=?').get(req.params.id);
         if(!sale) return res.status(404).json({error: "Venta no encontrada."});
 
         db.transaction(() => {
-            db.prepare("UPDATE phones SET status='Disponible' WHERE id=?").run(sale.phone_id);
+            db.prepare(`UPDATE phones 
+                        SET status='Disponible', 
+                            claro_pay_status = CASE WHEN is_consignment = 1 THEN 'Disponible' ELSE 'No Aplica' END 
+                        WHERE id=?`).run(sale.phone_id);
             db.prepare("DELETE FROM sales WHERE id=?").run(req.params.id);
         })();
         res.json({ success: true });
     } catch(err) { res.status(400).json({error: err.message}); }
 });
+
 
 // ==========================================
 // LIQUIDATIONS
@@ -1115,8 +1178,17 @@ app.get('/api/claro/consignments', (req, res) => {
         let sql = `
             SELECT p.id, p.imei, p.status as inventory_status, p.store_id, p.is_consignment, p.provider_name,
                    p.claro_pay_status, p.claro_pay_date, p.claro_pay_notes, p.created_at as entry_date,
+                   p.claro_receipt_path, p.claro_receipt_thumb,
                    m.name as model_name, m.cost_cash, m.cost_credit, m.price_cash, m.price_credit, b.name as brand_name, s.name as store_name,
-                   sl.id as sale_id, sl.sale_date, sl.final_price_type as sale_type, sl.final_price, sl.cost_price as claro_cost
+                   sl.id as sale_id, sl.sale_date, sl.final_price_type as sale_type, sl.final_price, sl.cost_price as recorded_cost,
+                   sl.invoice_path as sale_invoice_path,
+                   COALESCE(
+                       NULLIF(sl.cost_price, 0),
+                       CASE WHEN sl.final_price_type = 'Crédito' THEN NULLIF(m.cost_credit, 0) ELSE NULLIF(m.cost_cash, 0) END,
+                       m.cost_cash,
+                       m.price_cost,
+                       0
+                   ) as claro_cost
             FROM phones p
             JOIN phone_models m ON p.model_id = m.id
             JOIN brands b ON m.brand_id = b.id
@@ -1138,7 +1210,7 @@ app.get('/api/claro/consignments', (req, res) => {
             if (status === 'Disponible') {
                 sql += ` AND p.status = 'Disponible'`;
             } else if (status === 'Pendiente') {
-                sql += ` AND p.claro_pay_status = 'Pendiente de Pago'`;
+                sql += ` AND p.status = 'Vendido' AND (p.claro_pay_status = 'Pendiente de Pago' OR p.claro_pay_status IS NULL OR p.claro_pay_status = 'No Aplica' OR p.claro_pay_status = 'Disponible')`;
             } else if (status === 'Pagado') {
                 sql += ` AND p.claro_pay_status = 'Pagado'`;
             }
@@ -1153,12 +1225,42 @@ app.get('/api/claro/consignments', (req, res) => {
         sql += ` ORDER BY p.id DESC`;
         const rows = db.prepare(sql).all(...params);
 
-        // Global KPIs for CLARO Consignments
+        // Global KPIs for CLARO Consignments (Cálculo exacto de existencias, deudas y pagos)
         const totalReceived = db.prepare("SELECT COUNT(*) as cnt FROM phones p JOIN phone_models m ON p.model_id = m.id WHERE (p.is_consignment = 1 OR m.is_consignment = 1)").get().cnt;
         const availableCount = db.prepare("SELECT COUNT(*) as cnt FROM phones p JOIN phone_models m ON p.model_id = m.id WHERE (p.is_consignment = 1 OR m.is_consignment = 1) AND p.status = 'Disponible'").get().cnt;
         
-        const pendingSales = db.prepare("SELECT COUNT(*) as cnt, SUM(sl.cost_price) as total_amount FROM phones p JOIN phone_models m ON p.model_id = m.id JOIN sales sl ON sl.phone_id = p.id WHERE (p.is_consignment = 1 OR m.is_consignment = 1) AND p.claro_pay_status = 'Pendiente de Pago'").get();
-        const paidSales = db.prepare("SELECT COUNT(*) as cnt, SUM(sl.cost_price) as total_amount FROM phones p JOIN phone_models m ON p.model_id = m.id JOIN sales sl ON sl.phone_id = p.id WHERE (p.is_consignment = 1 OR m.is_consignment = 1) AND p.claro_pay_status = 'Pagado'").get();
+        const pendingSales = db.prepare(`
+            SELECT COUNT(p.id) as cnt,
+                   COALESCE(SUM(
+                       CASE 
+                           WHEN sl.cost_price > 0 THEN sl.cost_price
+                           WHEN sl.final_price_type = 'Crédito' THEN COALESCE(NULLIF(m.cost_credit, 0), NULLIF(m.cost_cash, 0), m.price_cost, 0)
+                           ELSE COALESCE(NULLIF(m.cost_cash, 0), NULLIF(m.cost_credit, 0), m.price_cost, 0)
+                       END
+                   ), 0) as total_amount
+            FROM phones p
+            JOIN phone_models m ON p.model_id = m.id
+            LEFT JOIN sales sl ON sl.phone_id = p.id
+            WHERE (p.is_consignment = 1 OR m.is_consignment = 1)
+              AND p.status = 'Vendido'
+              AND (p.claro_pay_status != 'Pagado' OR p.claro_pay_status IS NULL)
+        `).get();
+
+        const paidSales = db.prepare(`
+            SELECT COUNT(p.id) as cnt,
+                   COALESCE(SUM(
+                       CASE 
+                           WHEN sl.cost_price > 0 THEN sl.cost_price
+                           WHEN sl.final_price_type = 'Crédito' THEN COALESCE(NULLIF(m.cost_credit, 0), NULLIF(m.cost_cash, 0), m.price_cost, 0)
+                           ELSE COALESCE(NULLIF(m.cost_cash, 0), NULLIF(m.cost_credit, 0), m.price_cost, 0)
+                       END
+                   ), 0) as total_amount
+            FROM phones p
+            JOIN phone_models m ON p.model_id = m.id
+            LEFT JOIN sales sl ON sl.phone_id = p.id
+            WHERE (p.is_consignment = 1 OR m.is_consignment = 1)
+              AND p.claro_pay_status = 'Pagado'
+        `).get();
 
         res.json({
             kpis: {
@@ -1177,32 +1279,73 @@ app.get('/api/claro/consignments', (req, res) => {
     }
 });
 
-app.post('/api/claro/pay', requireAdmin, (req, res) => {
+app.post('/api/claro/pay', requireAdmin, upload.single('receipt'), async (req, res) => {
     try {
-        const { phone_ids, notes } = req.body;
+        let phone_ids = req.body.phone_ids;
+        if (typeof phone_ids === 'string') {
+            try { 
+                phone_ids = JSON.parse(phone_ids); 
+            } catch(e) { 
+                phone_ids = phone_ids.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)); 
+            }
+        }
         if (!Array.isArray(phone_ids) || phone_ids.length === 0) {
             return res.status(400).json({ error: "Seleccione al menos un teléfono para marcar como pagado a CLARO." });
         }
 
-        const now = getLocalTime();
-        const payNotes = notes || 'Pago procesado a CLARO';
+        let payDate = req.body.pay_date;
+        if (!payDate) {
+            payDate = getLocalTime();
+        } else if (payDate.length === 10) {
+            payDate += " 12:00:00";
+        }
 
-        const updatePhone = db.prepare("UPDATE phones SET claro_pay_status = 'Pagado', claro_pay_date = ?, claro_pay_notes = ? WHERE id = ?");
-        const updateSale = db.prepare("UPDATE sales SET claro_pay_status = 'Pagado' WHERE phone_id = ?");
+        const payNotes = req.body.notes || req.body.reference || 'Pago procesado a CLARO';
+
+        let receiptPaths = { path: null, thumb: null };
+        if (req.file) {
+            const ts = Date.now();
+            receiptPaths = await processImage(req.file.buffer, 'comprobantes', `claro_pago_${ts}.webp`);
+        }
+
+        const updatePhone = db.prepare(`
+            UPDATE phones 
+            SET claro_pay_status = 'Pagado', 
+                claro_pay_date = ?, 
+                claro_pay_notes = ?,
+                claro_receipt_path = COALESCE(?, claro_receipt_path),
+                claro_receipt_thumb = COALESCE(?, claro_receipt_thumb)
+            WHERE id = ?
+        `);
+
+        const updateSale = db.prepare(`
+            UPDATE sales 
+            SET claro_pay_status = 'Pagado',
+                claro_receipt_path = COALESCE(?, claro_receipt_path),
+                claro_receipt_thumb = COALESCE(?, claro_receipt_thumb)
+            WHERE phone_id = ?
+        `);
 
         const executePay = db.transaction((ids) => {
             for (const id of ids) {
-                updatePhone.run(now, payNotes, id);
-                updateSale.run(id);
+                updatePhone.run(payDate, payNotes, receiptPaths.path, receiptPaths.thumb, id);
+                updateSale.run(receiptPaths.path, receiptPaths.thumb, id);
             }
         });
 
         executePay(phone_ids);
-        res.json({ success: true, paid_count: phone_ids.length });
+        res.json({ 
+            success: true, 
+            paid_count: phone_ids.length,
+            receipt_path: receiptPaths.path,
+            receipt_thumb: receiptPaths.thumb
+        });
     } catch (err) {
+        console.error('CLARO Pay Error:', err.message);
         res.status(400).json({ error: err.message });
     }
 });
+
 
 // ==========================================
 // EXPORT CATALOG (DYNAMIC NO-CACHE)

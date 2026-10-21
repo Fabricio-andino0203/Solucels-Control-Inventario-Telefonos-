@@ -3378,6 +3378,7 @@ function viewImage(url) {
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         closeModal('lightboxModal');
+        closeModal('claroPaymentModal');
         closeModal('saleDetailModal');
         closeModal('userModal');
         closeModal('warrantyModal');
@@ -3894,8 +3895,8 @@ function renderClaroTable(phones) {
     if (!phones || phones.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="10" class="text-center" style="padding:2rem; color:var(--text-muted);">
-                    <i class="fas fa-search" style="font-size:2rem; margin-bottom:0.5rem; opacity:0.5; display:block;"></i>
+                <td colspan="10" class="text-center" style="padding:2.5rem; color:var(--text-muted);">
+                    <i class="fas fa-search" style="font-size:2rem; margin-bottom:0.75rem; opacity:0.5; display:block;"></i>
                     No se encontraron teléfonos en consignación CLARO con los filtros seleccionados.
                 </td>
             </tr>
@@ -3909,7 +3910,7 @@ function renderClaroTable(phones) {
     tbody.innerHTML = phones.map(p => {
         const isSold = p.inventory_status === 'Vendido';
         const isPaid = p.claro_pay_status === 'Pagado';
-        const isPending = p.claro_pay_status === 'Pendiente de Pago';
+        const isPending = isSold && !isPaid;
 
         let statusBadge = '';
         if (p.inventory_status === 'Disponible') {
@@ -3922,18 +3923,18 @@ function renderClaroTable(phones) {
         if (isPaid) {
             payStatusBadge = `<span class="badge" style="background:rgba(16,185,129,0.2); color:#10b981; border:1px solid #10b981;" title="${p.claro_pay_notes || ''}"><i class="fas fa-check-circle"></i> Pagado a CLARO</span>`;
         } else if (isPending) {
-            payStatusBadge = '<span class="badge" style="background:rgba(245,158,11,0.2); color:#fbbf24; border:1px solid #f59e0b; animation:pulse-warn 2s infinite;"><i class="fas fa-exclamation-triangle"></i> Pendiente Pago CLARO</span>';
+            payStatusBadge = '<span class="badge" style="background:rgba(245,158,11,0.2); color:#fbbf24; border:1px solid #f59e0b;"><i class="fas fa-exclamation-triangle"></i> Pendiente Pago CLARO</span>';
         } else {
-            payStatusBadge = '<span class="badge" style="background:rgba(255,255,255,0.05); color:var(--text-muted);">Sin vender</span>';
+            payStatusBadge = '<span class="badge" style="background:rgba(255,255,255,0.05); color:var(--text-muted);"><i class="fas fa-clock"></i> No Vendido</span>';
         }
 
-        // Applicable Cost depending on sale type or default cost_cash
+        // Costo a Pagar CLARO
         const costToPay = p.claro_cost ? p.claro_cost : (p.sale_type === 'Crédito' ? (p.cost_credit || p.cost_cash) : p.cost_cash);
 
         return `
-            <tr style="${isPending ? 'background:rgba(245,158,11,0.03);' : ''}">
+            <tr style="${isPending ? 'background:rgba(245,158,11,0.04);' : ''}">
                 <td style="text-align:center;">
-                    ${isPending ? `<input type="checkbox" class="claro-checkbox" value="${p.id}" onchange="onClaroCheckboxChange(${p.id}, this.checked)">` : '-'}
+                    ${isPending ? `<input type="checkbox" class="claro-checkbox" value="${p.id}" onchange="onClaroCheckboxChange(${p.id}, this.checked)">` : (isPaid ? '<i class="fas fa-check text-success" title="Liquidado"></i>' : '-')}
                 </td>
                 <td>
                     <strong style="font-family:monospace; font-size:0.95rem; color:var(--text-main);">${p.imei}</strong>
@@ -3945,21 +3946,48 @@ function renderClaroTable(phones) {
                 <td><span style="color:var(--text-muted);">${p.store_name}</span></td>
                 <td>${statusBadge}</td>
                 <td>${p.sale_date ? p.sale_date.split(' ')[0] : '<span style="color:var(--text-muted);">-</span>'}</td>
-                <td>${p.sale_type ? `<span style="font-weight:600; color:${p.sale_type==='Crédito'?'#fbbf24':'var(--success)'}">${p.sale_type}</span>` : '-'}</td>
                 <td>
-                    <strong style="color:#fbbf24; font-size:1.05rem;">L. ${(costToPay || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</strong>
-                    <span style="display:block; font-size:0.7rem; color:var(--text-muted);">${p.sale_type==='Crédito'?'Costo Crédito':'Costo Contado'}</span>
+                    ${p.sale_type ? `
+                        <span style="font-weight:600; color:${p.sale_type==='Crédito'?'#fbbf24':'var(--success)'}">${p.sale_type}</span>
+                        ${p.sale_invoice_path ? `
+                            <button type="button" class="btn btn-sm" onclick="openLightbox('${p.sale_invoice_path}')" style="display:block; margin-top:0.3rem; padding:0.2rem 0.5rem; font-size:0.72rem; background:rgba(59,130,246,0.12); color:#60a5fa; border:1px solid rgba(59,130,246,0.3); border-radius:4px; cursor:pointer;" title="Ver Factura de Venta">
+                                <i class="fas fa-file-invoice"></i> Ver Factura
+                            </button>
+                        ` : ''}
+                    ` : '<span style="color:var(--text-muted);">-</span>'}
+                </td>
+                <td>
+                    <strong style="color:${isPending ? '#fbbf24' : (isPaid ? 'var(--success)' : 'var(--text-main)')}; font-size:1.05rem;">
+                        L. ${(costToPay || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}
+                    </strong>
+                    <span style="display:block; font-size:0.7rem; color:var(--text-muted);">
+                        ${p.sale_type==='Crédito' ? 'Costo Crédito CLARO' : (isSold ? 'Costo Contado CLARO' : 'Costo Base')}
+                    </span>
                 </td>
                 <td>
                     ${payStatusBadge}
-                    ${p.claro_pay_date ? `<small style="display:block; font-size:0.72rem; color:var(--text-muted); margin-top:0.2rem;"><i class="fas fa-calendar-alt"></i> ${p.claro_pay_date.split(' ')[0]}</small>` : ''}
+                    ${p.claro_pay_date ? `<small style="display:block; font-size:0.72rem; color:var(--text-muted); margin-top:0.25rem;"><i class="fas fa-calendar-alt"></i> ${p.claro_pay_date.split(' ')[0]}</small>` : ''}
+                    ${p.claro_pay_notes ? `<small style="display:block; font-size:0.72rem; color:var(--text-muted); margin-top:0.15rem; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${p.claro_pay_notes}"><i class="fas fa-tag"></i> ${p.claro_pay_notes}</small>` : ''}
                 </td>
                 <td style="text-align:right;">
-                    ${isPending ? `
-                        <button class="btn btn-sm" onclick="paySingleClaro(${p.id}, '${p.imei}', ${costToPay})" style="background:#10b981; color:#fff; font-weight:600; padding:0.4rem 0.75rem;">
-                            <i class="fas fa-check"></i> Pagar a CLARO
-                        </button>
-                    ` : (isPaid ? `<span style="color:var(--success); font-size:0.85rem;"><i class="fas fa-check-double"></i> Liquidado</span>` : `<span style="color:var(--text-muted); font-size:0.8rem;">En inventario</span>`)}
+                    <div style="display:flex; justify-content:flex-end; align-items:center; gap:0.4rem; flex-wrap:wrap;">
+                        ${isPending ? `
+                            <button class="btn btn-sm" onclick="openClaroPayModal([${p.id}])" style="background:#10b981; color:#fff; font-weight:600; padding:0.45rem 0.85rem; border:none; border-radius:6px; cursor:pointer;" title="Registrar pago a CLARO">
+                                <i class="fas fa-hand-holding-usd"></i> Pagar a CLARO
+                            </button>
+                        ` : ''}
+                        ${isPaid && p.claro_receipt_path ? `
+                            <button class="btn btn-sm" onclick="openLightbox('${p.claro_receipt_path}')" style="background:rgba(16,185,129,0.15); color:#10b981; border:1px solid #10b981; padding:0.35rem 0.65rem; border-radius:6px; font-weight:600; cursor:pointer;" title="Ver Comprobante de Pago a CLARO">
+                                <i class="fas fa-receipt"></i> Ver Comprobante
+                            </button>
+                        ` : ''}
+                        ${isPaid && !p.claro_receipt_path ? `
+                            <span style="color:var(--success); font-size:0.85rem;"><i class="fas fa-check-double"></i> Liquidado</span>
+                        ` : ''}
+                        ${!isSold ? `
+                            <span style="color:var(--text-muted); font-size:0.8rem;"><i class="fas fa-warehouse"></i> En inventario</span>
+                        ` : ''}
+                    </div>
                 </td>
             </tr>
         `;
@@ -3989,54 +4017,168 @@ function updateClaroBulkPayButton() {
     if (btn) {
         if (count > 0) {
             btn.style.display = 'inline-flex';
-            btn.innerHTML = `<i class="fas fa-check-double"></i> Marcar ${count} Seleccionado(s) como Pagados`;
+            btn.innerHTML = `<i class="fas fa-check-double"></i> Pagar ${count} Seleccionado(s) a CLARO`;
         } else {
             btn.style.display = 'none';
         }
     }
 }
 
-async function paySingleClaro(phoneId, imei, amount) {
-    const notes = prompt(`Confirmar pago a CLARO para equipo IMEI: ${imei}\nMonto a pagar: L. ${amount.toLocaleString('en-US', {minimumFractionDigits:2})}\n\nIngrese número de comprobante/referencia de pago:`, `Pago CLARO IMEI ${imei}`);
-    if (notes === null) return; // Cancelled
+// ==========================================
+// MODAL DE PAGO Y SUBIDA DE COMPROBANTE CLARO
+// ==========================================
+function openClaroPayModal(phoneIds) {
+    if (!phoneIds || phoneIds.length === 0) return;
 
-    try {
-        const res = await fetchAuth(`${API_URL}/claro/pay`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone_ids: [phoneId], notes })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
+    const hiddenInput = document.getElementById('claroPayPhoneIds');
+    if (hiddenInput) hiddenInput.value = JSON.stringify(phoneIds);
 
-        showToast('Pago registrado a CLARO correctamente');
-        loadClaroConsignments();
-    } catch (err) {
-        showToast(err.message, true);
+    // Encontrar datos de los teléfonos a pagar
+    const selectedDevices = claroConsignmentsState.phones.filter(p => phoneIds.includes(p.id));
+    
+    let totalDebt = 0;
+    const devicesListEl = document.getElementById('claroPayDevicesList');
+    if (devicesListEl) {
+        devicesListEl.innerHTML = selectedDevices.map(p => {
+            const cost = p.claro_cost ? p.claro_cost : (p.sale_type === 'Crédito' ? (p.cost_credit || p.cost_cash) : p.cost_cash);
+            totalDebt += (cost || 0);
+            return `
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:0.25rem 0; border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <span><strong>${p.brand_name} ${p.model_name}</strong> &mdash; <code style="color:var(--text-main); font-size:0.85rem;">${p.imei}</code> (${p.sale_type || 'Venta'})</span>
+                    <strong style="color:#fbbf24;">L. ${(cost || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</strong>
+                </div>
+            `;
+        }).join('');
+    }
+
+    const countText = document.getElementById('claroPayCountText');
+    if (countText) countText.textContent = `${selectedDevices.length} equipo${selectedDevices.length !== 1 ? 's' : ''}`;
+
+    const totalEl = document.getElementById('claroPayTotalAmount');
+    if (totalEl) totalEl.textContent = `L. ${totalDebt.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+
+    // Fecha predeterminada hoy
+    const dateInput = document.getElementById('claroPayDate');
+    if (dateInput) {
+        const today = new Date().toISOString().split('T')[0];
+        dateInput.value = today;
+    }
+
+    // Limpiar campos y previsualización
+    const refInput = document.getElementById('claroPayReference');
+    if (refInput) {
+        refInput.value = selectedDevices.length === 1 
+            ? `Pago CLARO IMEI ${selectedDevices[0].imei}` 
+            : `Pago Lote CLARO (${selectedDevices.length} equipos)`;
+    }
+
+    const notesInput = document.getElementById('claroPayNotes');
+    if (notesInput) notesInput.value = '';
+
+    clearClaroReceiptInput();
+
+    const submitBtn = document.getElementById('btnConfirmClaroPay');
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-check-double"></i> Confirmar y Liquidar Pago';
+    }
+
+    openModal('claroPaymentModal');
+}
+
+function previewClaroReceipt(input) {
+    const previewContainer = document.getElementById('claroReceiptPreview');
+    const previewImg = document.getElementById('claroReceiptPreviewImg');
+    const fileNameEl = document.getElementById('claroReceiptFileName');
+
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        fileNameEl.textContent = `${file.name} (${(file.size / 1024).toFixed(0)} KB)`;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            previewImg.src = e.target.result;
+            previewContainer.style.display = 'flex';
+        };
+        reader.readAsDataURL(file);
+    } else {
+        clearClaroReceiptInput();
     }
 }
 
-async function paySelectedClaro() {
-    const ids = Array.from(claroConsignmentsState.selectedPhoneIds);
-    if (ids.length === 0) return;
+function clearClaroReceiptInput() {
+    const fileInput = document.getElementById('claroReceiptFile');
+    if (fileInput) fileInput.value = '';
+    const previewContainer = document.getElementById('claroReceiptPreview');
+    if (previewContainer) previewContainer.style.display = 'none';
+    const previewImg = document.getElementById('claroReceiptPreviewImg');
+    if (previewImg) previewImg.src = '';
+}
 
-    const notes = prompt(`Confirmar pago masivo a CLARO para ${ids.length} equipo(s).\n\nIngrese número de comprobante/referencia de pago a CLARO:`, `Pago Lote CLARO (${ids.length} equipos)`);
-    if (notes === null) return;
-
+async function submitClaroPayment(e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById('btnConfirmClaroPay');
+    
     try {
+        const rawIds = document.getElementById('claroPayPhoneIds').value;
+        const phone_ids = JSON.parse(rawIds);
+        const pay_date = document.getElementById('claroPayDate').value;
+        const reference = document.getElementById('claroPayReference').value.trim();
+        const notes = document.getElementById('claroPayNotes').value.trim();
+        const fileInput = document.getElementById('claroReceiptFile');
+        const receiptFile = fileInput && fileInput.files ? fileInput.files[0] : null;
+
+        if (!phone_ids || phone_ids.length === 0) {
+            showToast('Seleccione al menos un teléfono para registrar el pago', true);
+            return false;
+        }
+
+        if (!reference) {
+            showToast('Ingrese el número o referencia del comprobante de pago', true);
+            return false;
+        }
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registrando pago a CLARO...';
+        }
+
+        const formData = new FormData();
+        formData.append('phone_ids', JSON.stringify(phone_ids));
+        formData.append('pay_date', pay_date);
+        formData.append('notes', reference + (notes ? ' - ' + notes : ''));
+        if (receiptFile) {
+            formData.append('receipt', receiptFile);
+        }
+
         const res = await fetchAuth(`${API_URL}/claro/pay`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone_ids: ids, notes })
+            body: formData
         });
+
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
 
-        showToast(`Pago procesado correctamente para ${data.paid_count} equipo(s) a CLARO`);
+        showToast(`✅ Pago registrado a CLARO con éxito para ${data.paid_count} equipo(s)`);
+        closeModal('claroPaymentModal');
         loadClaroConsignments();
     } catch (err) {
         showToast(err.message, true);
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-check-double"></i> Confirmar y Liquidar Pago';
+        }
     }
+    return false;
+}
+
+function paySelectedClaro() {
+    const ids = Array.from(claroConsignmentsState.selectedPhoneIds);
+    if (ids.length === 0) {
+        showToast('Seleccione al menos un equipo de la lista', true);
+        return;
+    }
+    openClaroPayModal(ids);
 }
 
 function exportClaroReport() {
@@ -4045,10 +4187,11 @@ function exportClaroReport() {
         return;
     }
 
-    let csv = 'IMEI,Marca,Modelo,Tienda,Estado Inventario,Fecha Venta,Tipo Venta,Precio Venta (L.),Costo Pagar CLARO (L.),Estado Pago CLARO,Fecha Pago CLARO,Notas Pago\n';
+    let csv = 'IMEI,Marca,Modelo,Tienda,Estado Inventario,Fecha Venta,Tipo Venta,Precio Venta (L.),Costo Pagar CLARO (L.),Estado Pago CLARO,Fecha Pago CLARO,Comprobante/Notas,Tiene Comprobante Adjunto\n';
     claroConsignmentsState.phones.forEach(p => {
         const costToPay = p.claro_cost ? p.claro_cost : (p.sale_type === 'Crédito' ? (p.cost_credit || p.cost_cash) : p.cost_cash);
-        csv += `"${p.imei}","${p.brand_name}","${p.model_name}","${p.store_name}","${p.inventory_status}","${p.sale_date||''}","${p.sale_type||''}","${p.final_price||0}","${costToPay||0}","${p.claro_pay_status}","${p.claro_pay_date||''}","${(p.claro_pay_notes||'').replace(/"/g, '""')}"\n`;
+        const hasReceipt = p.claro_receipt_path ? 'SÍ' : 'NO';
+        csv += `"${p.imei}","${p.brand_name}","${p.model_name}","${p.store_name}","${p.inventory_status}","${p.sale_date||''}","${p.sale_type||''}","${p.final_price||0}","${costToPay||0}","${p.claro_pay_status}","${p.claro_pay_date||''}","${(p.claro_pay_notes||'').replace(/"/g, '""')}","${hasReceipt}"\n`;
     });
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -4058,6 +4201,7 @@ function exportClaroReport() {
     a.download = `Reporte_Consignaciones_CLARO_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
 }
+
 
 
 
